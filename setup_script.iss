@@ -12,6 +12,9 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
+
+; دعم التثبيت على أنظمة 32-bit و 64-bit
+ArchitecturesAllowed=x86 x64
 ArchitecturesInstallIn64BitMode=x64
 
 ; يتعرف أوتوماتيكياً على لغة ويندوز العميل ويسمح له بتغييرها
@@ -26,20 +29,16 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-; 1. ملفات نسخة الـ 64-bit (الناتجة من بناء جيت هوب)
+; 1. ملفات نسخة الـ 64-bit (تتثبت أوتوماتيكياً لو الويندوز 64)
 Source: "C:\AqaratApp_x64\*"; DestDir: "{app}"; Check: Is64BitInstallMode; Flags: ignoreversion recursesubdirs createallsubdirs
 
-; 2. ملفات نسخة الـ 32-bit (الناتجة من البناء المحلي)
+; 2. ملفات نسخة الـ 32-bit (تتثبت أوتوماتيكياً لو الويندوز 32)
 Source: "C:\AqaratApp_x86\*"; DestDir: "{app}"; Check: not Is64BitInstallMode; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-; اختصار الـ 64-bit على سطح المكتب وقائمة Start
-Name: "{autodesktop}\منظومة العقارات"; Filename: "{app}\aqarat_app.exe"; Check: Is64BitInstallMode; Tasks: desktopicon
-Name: "{group}\منظومة العقارات"; Filename: "{app}\aqarat_app.exe"; Check: Is64BitInstallMode
-
-; اختصار الـ 32-bit على سطح المكتب وقائمة Start
-Name: "{autodesktop}\منظومة العقارات"; Filename: "{app}\aqarat_app.exe"; Check: not Is64BitInstallMode; Tasks: desktopicon
-Name: "{group}\منظومة العقارات"; Filename: "{app}\aqarat_app.exe"; Check: not Is64BitInstallMode
+; اختصار موحد بأيقونة واحدة على سطح المكتب وقائمة Start بغض النظر عن النواة
+Name: "{autodesktop}\منظومة العقارات"; Filename: "{app}\aqarat.exe"; Tasks: desktopicon
+Name: "{group}\منظومة العقارات"; Filename: "{app}\aqarat.exe"
 
 [Run]
-Filename: "{app}\aqarat_app.exe"; Description: "{cm:LaunchProgram,منظومة العقارات}"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\aqarat.exe"; Description: "{cm:LaunchProgram,منظومة العقارات}"; Flags: postinstall nowait skipifsilent

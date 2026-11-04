@@ -1,6 +1,15 @@
-build/ 
-.dart_tool/ 
-android/app/keystore_base64.txt 
+build/
+.dart_tool/
+android/app/keystore_base64.txt
 # Local shortcut scripts
 *.cmd
 *.lnk
+
+# Custom Setup & Output Ignore
+/output/
+*.iss
+aqarat_backup.json
+*.exe
+*.dll
+*.so
+*.dylib

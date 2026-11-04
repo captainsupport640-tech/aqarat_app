@@ -11,6 +11,7 @@ import 'security_manager.dart';
 class FileBackupService {
 
   /// تحديد مسار النسخ الاحتياطي محلياً بشكل آمن داخل مجلد Documents
+  /// تحديد مسار النسخ الاحتياطي محلياً بشكل آمن داخل مجلد التطبيق المخصص
   static Future<File?> _getBackupFile() async {
     if (kIsWeb) {
       return null;

@@ -28,9 +28,7 @@ import 'app_storage_manager.dart';
 Future<void> requestAllAppPermissions() async {
   if (kIsWeb) return;
   try {
-    // تهيئة الفايربيس هنا داخل دالة الطلب أو البداية لضمان عملها فوراً
-    await Firebase.initializeApp();
-
+    // تم الاكتفاء بطلب الصلاحيات فقط هنا لمنع أي تعارض أو شاشة بيضاء أثناء بدء التشغيل
     await Permission.storage.request();
     if (await Permission.manageExternalStorage.status.isDenied) {
       await Permission.manageExternalStorage.request();
@@ -41,14 +39,14 @@ Future<void> requestAllAppPermissions() async {
       await Permission.ignoreBatteryOptimizations.request();
     }
   } catch (e) {
-    debugPrint('خطأ أثناء طلب الصلاحيات أو تهيئة الفايربيس: $e');
+    debugPrint('خطأ أثناء طلب الصلاحيات: $e');
   }
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // 1. تهيئة الفايربيس بقيم FirebaseOptions الخاصة بمشروعك
+  // 1. تهيئة الفايربيس مرة واحدة فقط وبأمان تام لمنع تكرار التهيئة أو الشاشة البيضاء
   try {
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
@@ -66,24 +64,24 @@ void main() async {
     debugPrint('تنبيه تهيئة فايربيس: $e');
   }
 
-  // 2. طلب الصلاحيات
+  // 2. طلب الصلاحيات بعد التهيئة الآمنة
   await requestAllAppPermissions();
 
-  // 3. تحميل البيانات والمزامنة
+  // 3. تحميل البيانات والمزامنة المحلية
   CloudSyncService.initOfflineSupport();
   await LicensingService.loadLicenseStatus();
   await LocalStorageService.loadLocally();
   
-  // المزامنة تعمل بعد ضمان جاهزية الفايربيس (حماية ضد الشاشة البيضاء)
+  // المزامنة اللحظية تعمل في الخلفية تماماً لمنع أي تعليق أو تقليب أبيض في الجداول
   unawaited(
-    Future.microtask(() async {
-      try {
-        await CloudSyncService.syncFromCloud(isAuto: true);
-      } catch (e) {
-        debugPrint('خطأ في المزامنة اللحظية: $e');
-      }
-    }),
-  );
+  Future.microtask(() async {
+    try {
+      await CloudSyncService.syncFromCloud(isAuto: true);
+    } catch (e) {
+      debugPrint('خطأ في المزامنة اللحظية: $e');
+    }
+  }),
+);
 
   runApp(const Aqarat());
 }

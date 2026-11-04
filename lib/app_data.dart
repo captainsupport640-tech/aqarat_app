@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'services/local_storage_service.dart';
+import 'services/security_manager.dart';
 
 class AppData {
   static final Map<String, List> storage = {
@@ -28,6 +29,11 @@ Widget buildDynamicTable({
 }) {
   final List<String> fullHeaders = [...headers, 'حذف'];
 
+  // فحص الصلاحية لفتح الحذف للمبرمج والمدير أو من لديه الصلاحية
+  bool canDelete = 
+      SecurityManager.currentUserRole == 'مبرمج' || 
+      SecurityManager.currentUserRole == 'مدير' ||
+      SecurityManager.currentUserRole == 'نائب المدير';
   return Container(
     width: double.infinity,
     decoration: BoxDecoration(
@@ -66,29 +72,35 @@ Widget buildDynamicTable({
                         ...keys.map((key) => DataCell(Text(rowData[key] ?? ''))),
                         DataCell(
                           IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                            tooltip: 'حذف السجل لنقله إلى سلة المهملات',
-                            onPressed: () async {
-                              if (screenName != null && AppData.storage.containsKey(screenName)) {
-                                final itemToDelete = AppData.storage[screenName]![index];
-                                TrashBinManager.moveToTrash(screenName, itemToDelete);
+                            icon: Icon(
+                              Icons.delete,
+                              color: canDelete ? Colors.red : Colors.grey,
+                              size: 20,
+                            ),
+                            tooltip: canDelete ? 'حذف السجل لنقله إلى سلة المهملات' : 'عفواً، ليس لديك صلاحية للحذف',
+                            onPressed: canDelete
+                                ? () async {
+                                    if (screenName != null && AppData.storage.containsKey(screenName)) {
+                                      final itemToDelete = AppData.storage[screenName]![index];
+                                      TrashBinManager.moveToTrash(screenName, itemToDelete);
 
-                                AppData.storage[screenName]?.removeAt(index);
-                                await LocalStorageService.saveLocally();
+                                      AppData.storage[screenName]?.removeAt(index);
+                                      await LocalStorageService.saveLocally();
 
-                                onRefresh?.call();
+                                      onRefresh?.call();
 
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('تم نقل السجل من ($screenName) إلى سلة المهملات بنجاح!'),
-                                      backgroundColor: Colors.orange.shade800,
-                                      duration: const Duration(seconds: 2),
-                                    ),
-                                  );
-                                }
-                              }
-                            },
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('تم نقل السجل من ($screenName) إلى سلة المهملات بنجاح!'),
+                                            backgroundColor: Colors.orange.shade800,
+                                            duration: const Duration(seconds: 2),
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  }
+                                : null, // يتعطل الزر فقط لو المستخدم ليس مبرمجاً أو مديراً وليس له صلاحية
                           ),
                         ),
                       ],
@@ -103,7 +115,6 @@ Widget buildDynamicTable({
     ),
   );
 }
-
 // دالة نافذة الإضافة مع فحص 11 رقم للتليفون وتاريخ اليوم
 void showFormDialog(BuildContext context, String screenTitle, List<String> fields, VoidCallback onRefresh) {
   final String todayDate = '10/04/2026';
