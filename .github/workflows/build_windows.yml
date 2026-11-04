@@ -29,6 +29,8 @@ jobs:
     - name: Build Windows Release
       env:
         CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+        CXXFLAGS: "/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS"
+        CFLAGS: "/D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS"
       run: flutter build windows --release
 
     - name: Compress Build Output

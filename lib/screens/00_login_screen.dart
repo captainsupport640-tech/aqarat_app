@@ -82,6 +82,15 @@ class _LoginScreenState extends State<LoginScreen> {
     return emailRegex.hasMatch(email.trim());
   }
 
+  // دالة التحقق من صحة رقم التليفون (11 رقم) وبدايته بالشبكات المتاحة
+  bool _isValidEgyptianPhone(String phone) {
+    if (phone.length != 11 || !RegExp(r'^[0-9]+$').hasMatch(phone)) {
+      return false;
+    }
+    List<String> validPrefixes = ['010', '011', '012', '015', '040'];
+    return validPrefixes.any((prefix) => phone.startsWith(prefix));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -152,10 +161,11 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    if (username.length != 11) {
+    // التحقق من شرط 11 رقم للشبكات 010, 011, 012, 015, 040
+    if (!_isValidEgyptianPhone(username)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('خطأ: يجب أن يتكون رقم التليفون من 11 رقم بالضبط!'),
+          content: Text('خطأ: يجب إدخال رقم تليفون مكون من 11 رقم يبدأ بـ (010, 011, 012, 015, 040)!'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -186,7 +196,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
-      // 3. الفحص أونلاين في شجرة المستخدمين السحابية (المعدل للقراءة من 2_employees_tree)
+      // 3. الفحص أونلاين في شجرة المستخدمين السحابية
       if (!isValidUser) {
         try {
           DatabaseEvent event = await FirebaseDatabase.instance.ref().child('companies_storage').once();
@@ -481,9 +491,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         return;
                       }
 
-                      if (phoneUser.length != 11) {
+                      if (!_isValidEgyptianPhone(phoneUser)) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('الرجاء إدخال رقم تليفون صحيح مكون من 11 رقم!'), backgroundColor: Colors.orange),
+                          const SnackBar(content: Text('الرجاء إدخال رقم تليفون صحيح مكون من 11 رقم يبدأ بـ (010, 011, 012, 015, 040)!'), backgroundColor: Colors.orange),
                         );
                         return;
                       }
