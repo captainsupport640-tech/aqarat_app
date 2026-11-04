@@ -1,0 +1,315 @@
+import 'package:flutter/material.dart';
+import '../app_data.dart';
+import '../services/local_storage_service.dart';
+import '../services/cloud_sync_service.dart';
+
+class NotificationItem {
+  final String id;
+  final String title;
+  final String details;
+  final String date;
+  final String category; // 'طلب' | 'معاينة' | 'تذكير مالي' | 'نظام'
+  final Color color;
+  final IconData icon;
+  bool isRead;
+
+  NotificationItem({
+    required this.id,
+    required this.title,
+    required this.details,
+    required this.date,
+    required this.category,
+    required this.color,
+    required this.icon,
+    this.isRead = false,
+  });
+}
+
+class NotificationService {
+  
+  /// جلب جميع التنبيهات الحقيقية النشطة من قاعدة البيانات
+  static List<NotificationItem> getAllActiveNotifications() {
+    List<NotificationItem> notifications = [];
+
+    // جلب معرّفات الإشعارات المقروءة المحفوظة سابقاً
+    List readIds = AppData.storage['read_notifications'] ?? [];
+
+    // 1️⃣ تنبيهات شاشة طلبات العملاء (العقارات المطابقة المتاحة للطلبات)
+    _extractCustomerRequestNotifications(notifications, readIds);
+
+    // 2️⃣ تنبيهات شاشة المعاينات (المعاينات الشغالة والمعلقة)
+    _extractInspectionNotifications(notifications, readIds);
+
+    // 3️⃣ تنبيهات شاشة الحسابات والتذكيرات المالية (الإيجارات والفواتير والالتزامات)
+    _extractAccountReminderNotifications(notifications, readIds);
+
+    return notifications;
+  }
+
+  /// استخراج تنبيهات طلبات العملاء والعقارات المطابقة
+  static void _extractCustomerRequestNotifications(List<NotificationItem> list, List readIds) {
+    try {
+      List requests = AppData.storage['طلبات العملاء'] ?? [];
+      for (var req in requests) {
+        if (req is Map) {
+          String clientName = req['اسم العميل'] ?? 'عميل';
+          String propType = req['نوع العقار'] ?? 'عقار';
+          String opType = req['نوع العملية'] ?? 'طلب';
+          String date = req['التاريخ'] ?? '';
+
+          bool isRent = opType.contains('إيجار') || opType.contains('ايجار');
+          String targetKey = isRent ? 'العقارات المعروضة للإيجار' : 'العقارات المعروضة للبيع';
+          List properties = AppData.storage[targetKey] ?? 
+                           AppData.storage[isRent ? 'بيانات الإيجار' : 'بيانات البيع'] ?? [];
+
+          int matchCount = 0;
+          for (var prop in properties) {
+            if (prop is Map && (prop['نوع العقار'] ?? '').contains(propType)) {
+              matchCount++;
+            }
+          }
+
+          if (matchCount > 0) {
+            String notifId = 'req_${clientName}_${propType}_$date';
+            list.add(NotificationItem(
+              id: notifId,
+              title: 'مطابقة طلب عميل: $clientName',
+              details: 'يوجد $matchCount عقار مطابقة لطلب ($propType - $opType)',
+              date: date,
+              category: 'طلب',
+              color: Colors.blueAccent,
+              icon: Icons.person_search,
+              isRead: readIds.contains(notifId),
+            ));
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('خطأ جلب تنبيهات الطلبات: $e');
+    }
+  }
+
+  /// استخراج تنبيهات المعاينات
+  static void _extractInspectionNotifications(List<NotificationItem> list, List readIds) {
+    try {
+      List inspections = AppData.storage['المعاينات'] ?? [];
+      for (var insp in inspections) {
+        if (insp is Map) {
+          String status = insp['حالة المعاينة'] ?? 'تحت المعاينة';
+          String buyer = insp['إسم المشتري'] ?? 'مشتري';
+          String propType = insp['نوع العقار'] ?? 'عقار';
+          String date = insp['التاريخ'] ?? '';
+
+          if (status == 'تحت المعاينة') {
+            String notifId = 'insp_${buyer}_${propType}_$date';
+            list.add(NotificationItem(
+              id: notifId,
+              title: 'معاينة معلقة: $buyer',
+              details: 'عقار: $propType - لم يتم تسجيل قرار العميل النهائي بعد',
+              date: date,
+              category: 'معاينة',
+              color: Colors.amberAccent,
+              icon: Icons.visibility,
+              isRead: readIds.contains(notifId),
+            ));
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('خطأ جلب تنبيهات المعاينات: $e');
+    }
+  }
+
+  /// استخراج تنبيهات الحسابات والتذكيرات المالية الإيجارية
+  static void _extractAccountReminderNotifications(List<NotificationItem> list, List readIds) {
+    try {
+      List reminders = AppData.storage['التذكيرات المالية'] ?? [];
+      for (var rem in reminders) {
+        if (rem is Map) {
+          String title = rem['العنوان'] ?? 'تذكير مالي';
+          String type = rem['النوع'] ?? 'التزام';
+          String amount = rem['المبلغ'] ?? '-';
+          String date = rem['التاريخ'] ?? '';
+          String status = rem['الحالة'] ?? 'نشط';
+
+          if (status == 'نشط') {
+            String notifId = 'rem_${title}_$date';
+            list.add(NotificationItem(
+              id: notifId,
+              title: 'تذكير مالي: $title',
+              details: 'النوع: $type | القيمة: $amount ج.م | استحقاق: $date',
+              date: date,
+              category: 'تذكير مالي',
+              color: Colors.greenAccent,
+              icon: Icons.notifications_active,
+              isRead: readIds.contains(notifId),
+            ));
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('خطأ جلب تنبيهات الحسابات: $e');
+    }
+  }
+
+  /// تعيين إشعار كمقروء وحفظه محلياً والسحابية
+  static Future<void> markAsRead(String id) async {
+    if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
+      AppData.storage['read_notifications'] = [];
+    }
+    List readList = AppData.storage['read_notifications'] as List;
+    if (!readList.contains(id)) {
+      readList.add(id);
+      await LocalStorageService.saveLocally();
+      CloudSyncService.syncToCloud(isAuto: true);
+    }
+  }
+
+  /// تعيين كافة الإشعارات كمقروءة
+  static Future<void> markAllAsRead() async {
+    List<NotificationItem> items = getAllActiveNotifications();
+    if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
+      AppData.storage['read_notifications'] = [];
+    }
+    List readList = AppData.storage['read_notifications'] as List;
+    for (var item in items) {
+      if (!readList.contains(item.id)) {
+        readList.add(item.id);
+      }
+    }
+    await LocalStorageService.saveLocally();
+    CloudSyncService.syncToCloud(isAuto: true);
+  }
+
+  /// عرض قائمة الإشعارات في النافذة المنسدلة للزر في أعلى البرنامج
+  static void showNotificationMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (bottomSheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            List<NotificationItem> items = getAllActiveNotifications();
+            int unreadCount = items.where((i) => !i.isRead).length;
+
+            return Directionality(
+              textDirection: TextDirection.rtl,
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.notifications, color: Colors.amber, size: 24),
+                            const SizedBox(width: 8),
+                            Text(
+                              'التنبيهات الإشعارية الحية (${items.length})',
+                              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                            if (unreadCount > 0) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.redAccent,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '$unreadCount غير مقروء',
+                                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ]
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            if (unreadCount > 0)
+                              TextButton(
+                                onPressed: () async {
+                                  await markAllAsRead();
+                                  setSheetState(() {});
+                                },
+                                child: const Text('تحديد الكل كمقروء', style: TextStyle(color: Colors.amberAccent, fontSize: 11)),
+                              ),
+                            IconButton(
+                              icon: const Icon(Icons.close, color: Colors.white70),
+                              onPressed: () => Navigator.pop(bottomSheetContext),
+                            ),
+                          ],
+                        )
+                      ],
+                    ),
+                    const Divider(color: Colors.grey),
+                    Expanded(
+                      child: items.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'لا توجد تنبيهات حية حالياً',
+                                style: TextStyle(color: Colors.white54, fontSize: 14),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: items.length,
+                              itemBuilder: (context, index) {
+                                final item = items[index];
+                                return Card(
+                                  color: item.isRead ? const Color(0xFF222222) : const Color(0xFF2D2D2D),
+                                  margin: const EdgeInsets.symmetric(vertical: 4),
+                                  child: ListTile(
+                                    onTap: () async {
+                                      await markAsRead(item.id);
+                                      setSheetState(() {});
+                                    },
+                                    leading: CircleAvatar(
+                                      backgroundColor: item.color.withOpacity(0.2),
+                                      child: Icon(item.icon, color: item.color, size: 20),
+                                    ),
+                                    title: Text(
+                                      item.title,
+                                      style: TextStyle(
+                                        color: item.isRead ? Colors.white60 : item.color,
+                                        fontWeight: item.isRead ? FontWeight.normal : FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      item.details,
+                                      style: TextStyle(
+                                        color: item.isRead ? Colors.white38 : Colors.white70,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                    trailing: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text(item.date, style: const TextStyle(color: Colors.grey, fontSize: 10)),
+                                        const SizedBox(height: 4),
+                                        if (!item.isRead)
+                                          const Icon(Icons.circle, color: Colors.amber, size: 8),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}

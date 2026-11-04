@@ -1,0 +1,39 @@
+name: aqarat Windows App
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build Windows Executable
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    - name: Set up Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.x'
+        channel: 'stable'
+
+    - name: Enable Windows Desktop Support
+      run: flutter config --enable-windows-desktop
+
+    - name: Get Dependencies
+      run: flutter pub get
+
+    - name: Build Windows Release
+      run: flutter build windows --release --extra-cmake-args="-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+      
+    - name: Compress Build Output
+      shell: pwsh
+      run: |
+        Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath Aqarat-Windows-Release.zip
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Aqarat-Windows-App
+        path: Aqarat-Windows-Release.zip

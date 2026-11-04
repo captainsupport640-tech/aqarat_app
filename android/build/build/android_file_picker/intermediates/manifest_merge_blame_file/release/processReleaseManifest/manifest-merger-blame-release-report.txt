@@ -1,0 +1,47 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.mr.flutter.plugin.filepicker" >
+4
+5    <uses-sdk android:minSdkVersion="21" />
+6
+7    <queries>
+7-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:3:3-19:13
+8        <intent>
+8-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:4:5-7:14
+9            <action android:name="android.intent.action.GET_CONTENT" />
+9-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:5:7-66
+9-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:5:15-63
+10
+11            <data android:mimeType="*/*" />
+11-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:6:7-38
+11-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:6:13-35
+12        </intent>
+13        <intent>
+13-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:8:5-11:14
+14            <action android:name="android.intent.action.OPEN_DOCUMENT" />
+14-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:9:7-68
+14-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:9:15-65
+15
+16            <data android:mimeType="*/*" />
+16-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:6:7-38
+16-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:6:13-35
+17        </intent>
+18        <intent>
+18-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:12:5-14:14
+19            <action android:name="android.intent.action.OPEN_DOCUMENT_TREE" />
+19-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:13:7-73
+19-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:13:15-70
+20        </intent>
+21        <intent>
+21-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:15:5-18:14
+22            <action android:name="android.intent.action.CREATE_DOCUMENT" />
+22-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:16:7-70
+22-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:16:15-67
+23
+24            <data android:mimeType="*/*" />
+24-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:6:7-38
+24-->C:\Users\Capiten\AppData\Local\Pub\Cache\hosted\pub.dev\android_file_picker-2.1.2\android\src\main\AndroidManifest.xml:6:13-35
+25        </intent>
+26    </queries>
+27
+28</manifest>
