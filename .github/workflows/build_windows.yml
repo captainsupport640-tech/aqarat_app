@@ -27,7 +27,7 @@ jobs:
       run: flutter pub get
 
     - name: Build Windows Release
-      run: flutter build windows --release
+      run: flutter build windows --release --extra-cmake-args="-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
 
     - name: Compress Build Output
       shell: pwsh
