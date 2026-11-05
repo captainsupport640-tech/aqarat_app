@@ -26,6 +26,7 @@ dependencies:
   permission_handler: ^13.0.2
   flutter_localizations:
     sdk: flutter
+  local_auth: ^3.0.2
 
 dev_dependencies:
   flutter_test:

@@ -36,7 +36,7 @@ class CloudSyncService {
     email = email.trim();
 
     if (email.isEmpty || !email.contains('@')) {
-      email = 'admin@aqarat.com';
+      email = 'captain.support640@gmail.com';
     }
 
     return email.toLowerCase().replaceAll('.', '_').replaceAll('@', '_at_');
@@ -54,14 +54,16 @@ class CloudSyncService {
         DatabaseReference ref = FirebaseDatabase.instance.ref("companies_storage/$syncKey/1_master_database/data");
         _realtimeSubscription = ref.onValue.listen((event) async {
           if (event.snapshot.exists && event.snapshot.value != null) {
-            _updateLocalMemorySmart(event.snapshot.value.toString());
-            await LocalStorageService.saveLocally();
-            onDataUpdated();
+            bool hasChanges = _updateLocalMemorySmart(event.snapshot.value.toString());
+            if (hasChanges) {
+              await LocalStorageService.saveLocally();
+              onDataUpdated();
+            }
           }
         });
       } else {
-        // فحص دوري خفيف في الخلفية لنسخة الويندوز والويب لتنفيذ الاستماع اللحظي رايح جاي
-        _restPollingTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
+        // فحص دوري سريع كالموجات المباشرة لنسخة الويندوز والويب لتنفيذ الاستماع اللحظي رايح جاي
+        _restPollingTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
           await _fetchRemoteDataSilently(onUpdated: onDataUpdated);
         });
       }
@@ -151,12 +153,8 @@ class CloudSyncService {
 
   /// 3️⃣ سحب البيانات الذكي: تحميل البيانات المحلية أولاً فوراً ثم التحديث السحابي في الخلفية
   static Future<bool> syncFromCloud({bool isAuto = false}) async {
-    // ⚡ أولاً: قراءة البيانات المحفوظة محلياً على الجهاز لفتح الشاشة في 0.1 ثانية
     await LocalStorageService.loadLocally();
-
-    // ⚡ ثانياً: تحديث السحابة في الخلفية دون تعطيل الواجهة أو انتظار الاستجابة
     _fetchRemoteDataSilently();
-
     return true;
   }
 
@@ -168,7 +166,7 @@ class CloudSyncService {
 
       if (_useRestApi) {
         final url = Uri.parse("$_dbUrl/companies_storage/$syncKey/1_master_database.json");
-        final response = await http.get(url).timeout(const Duration(seconds: 8));
+        final response = await http.get(url).timeout(const Duration(seconds: 6));
         if (response.statusCode == 200 && response.body != 'null') {
           rawData = jsonDecode(response.body) as Map?;
         }
@@ -176,7 +174,7 @@ class CloudSyncService {
         FirebaseDatabase db = FirebaseDatabase.instance;
         db.goOnline();
         DatabaseReference ref = db.ref("companies_storage/$syncKey/1_master_database");
-        DataSnapshot snapshot = await ref.get().timeout(const Duration(seconds: 8));
+        DataSnapshot snapshot = await ref.get().timeout(const Duration(seconds: 6));
         if (snapshot.exists && snapshot.value != null) {
           rawData = Map.from(snapshot.value as Map);
         }
@@ -195,7 +193,7 @@ class CloudSyncService {
     }
   }
 
- /// تحديث الذاكرة المحلية بالدمج الذكي المباشر دون أخطاء تنميط
+  /// تحديث الذاكرة المحلية بالدمج الذكي المباشر دون أخطاء تنميط
   static bool _updateLocalMemorySmart(String rawJson) {
     try {
       Map decodedData = jsonDecode(rawJson);

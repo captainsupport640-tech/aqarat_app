@@ -3,6 +3,7 @@ import '../app_data.dart';
 import '../app_dropdowns.dart';
 import '../services/local_storage_service.dart';
 import '../services/cloud_sync_service.dart';
+import '../app_storage_manager.dart';
 import '08_accounts_screen.dart';
 import '10_archive_screen.dart';
 
@@ -35,8 +36,37 @@ class _GeneralReportScreenState extends State<GeneralReportScreen> {
       selectedMonth = 'أكتوبر';
     }
     selectedYear = now.year.toString();
+    _startRealtimeListener();
+  }
+void _startRealtimeListener() async {
+    String currentEmail = AppStorageManager.currentEmail;
+    if (currentEmail.isEmpty) {
+      currentEmail = await LocalStorageService.getPersonalGmail();
+    }
+    
+    if (currentEmail.isNotEmpty) {
+      AppStorageManager.listenToMasterDatabase(
+        companyAdminEmail: currentEmail,
+        onDataUpdated: (updatedData) {
+          if (mounted) {
+            setState(() {
+              updatedData.forEach((key, value) {
+                if (value != null) {
+                  AppData.storage[key] = value;
+                }
+              });
+            });
+          }
+        },
+      );
+    }
   }
 
+  @override
+  void dispose() {
+    AppStorageManager.stopMasterDatabaseListener();
+    super.dispose();
+  }
   int _getMonthNumber(String monthName) {
     int idx = monthsList.indexOf(monthName);
     return idx != -1 ? idx + 1 : 10;

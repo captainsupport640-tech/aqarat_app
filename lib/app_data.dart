@@ -92,7 +92,8 @@ Widget buildDynamicTable({
                                       // 2. تسجيل إشعار بحذف السجل
                                       TrashBinManager.addRealNotification(
                                         'حذف سجل', 
-                                        'قام ${SecurityManager.currentUsername} بحذف سجل من ($screenName)'
+                                        'قام ${SecurityManager.currentUsername} بحذف سجل من ($screenName)',
+                                        context: context,
                                       );
 
                                       AppData.storage[screenName]?.removeAt(index);
@@ -173,10 +174,11 @@ void showFormDialog(BuildContext context, String screenTitle, List<String> field
     }
     AppData.storage[screenTitle]!.add(newRow);
 
-    // تسجيل إشعار إضافة بيانات جديدة
+    // تسجيل إشعار إضافة بيانات جديدة (مع تشغيل الصوت وإشعار القائمة المنسدلة)
     TrashBinManager.addRealNotification(
       'إضافة بيانات جديدة',
-      'قام ${SecurityManager.currentUsername} بإضافة سجل جديد في ($screenTitle)'
+      'قام ${SecurityManager.currentUsername} بإضافة سجل جديد في ($screenTitle)',
+      context: context,
     );
 
     // الحفظ المحلي السريع
@@ -282,8 +284,30 @@ void showFormDialog(BuildContext context, String screenTitle, List<String> field
   );
 }
 
-// --- دالة سلة المهملات الآمنة وإدارة الإشعارات ---
+// --- دالة سلة المهملات الآمنة وإدارة الإشعارات المتقدمة ---
 class TrashBinManager {
+  // قناة إشعارات حية لتحديث العداد الخارجي والداخلي فوراً
+  static final StreamController<int> _notificationsStreamController = StreamController<int>.broadcast();
+  static Stream<int> get onNotificationsChanged => _notificationsStreamController.stream;
+
+  // عدد الإشعارات غير المقروءة
+  static int get unreadCount {
+    final list = AppData.storage['الإشعارات'] ?? [];
+    return list.where((item) => item is Map && item['isRead'] != true).length;
+  }
+
+  // تمييز كل الإشعارات كـ "مقروءة" عند فتح النافذة
+  static void markAllAsRead() {
+    final list = AppData.storage['الإشعارات'] ?? [];
+    for (var item in list) {
+      if (item is Map) {
+        item['isRead'] = true;
+      }
+    }
+    _notificationsStreamController.add(0);
+    LocalStorageService.saveLocally();
+  }
+
   static void moveToTrash(String screenName, Map<String, String> itemData) {
     if (!AppData.storage.containsKey('trash_bin') || AppData.storage['trash_bin'] == null) {
       AppData.storage['trash_bin'] = [];
@@ -301,18 +325,20 @@ class TrashBinManager {
     AppData.storage['trash_bin']!.add(trashItem);
   }
 
-  static void addRealNotification(String title, String body) {
+  // إضافة إشعار جديد مع تشغيل الصوت وإظهار القائمة المنسدلة (Dropdown Toast)
+  static void addRealNotification(String title, String body, {BuildContext? context}) {
     if (!AppData.storage.containsKey('الإشعارات') || AppData.storage['الإشعارات'] == null) {
       AppData.storage['الإشعارات'] = [];
     }
     
     final now = DateTime.now();
-    final timeStr = "${now.hour}:${now.minute.toString().padLeft(2, '0')} - ${now.year}/${now.month}/${now.day}";
+    final timeStr = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')} - ${now.year}/${now.month}/${now.day}";
     
     (AppData.storage['الإشعارات'] as List).insert(0, {
       'العنوان': title,
       'التفاصيل': body,
       'التاريخ': timeStr,
+      'isRead': false, // إشعار جديد غير مقروء
     });
 
     const int maxNotifications = 25;
@@ -320,6 +346,55 @@ class TrashBinManager {
       (AppData.storage['الإشعارات'] as List).removeRange(
         maxNotifications, 
         (AppData.storage['الإشعارات'] as List).length
+      );
+    }
+
+    // 1. تحديث العداد الحي تلقائياً
+    _notificationsStreamController.add(unreadCount);
+
+    // 2. تشغيل صوت التنبيه التلقائي الخفيف
+    try {
+      SystemSound.play(SystemSoundType.click);
+    } catch (_) {}
+
+    // 3. إظهار إشعار القائمة المنسدلة (Dropdown Banner / Toast) لو الـ Context متاح
+    if (context != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          elevation: 6,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.only(top: 10, left: 10, right: 10),
+          backgroundColor: const Color(0xFF1E1E1E),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: Colors.amberAccent, width: 1.5),
+          ),
+          duration: const Duration(seconds: 4),
+          content: Row(
+            children: [
+              const Icon(Icons.notifications_active, color: Colors.amberAccent, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    Text(
+                      body,
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
   }

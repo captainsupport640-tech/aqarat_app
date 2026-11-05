@@ -2,6 +2,7 @@ import '../services/notification_service.dart';
 import 'package:flutter/material.dart';
 import '../app_data.dart';
 import '../app_dropdowns.dart';
+import '../app_storage_manager.dart'; // تأكد إن ده موجود فوق
 import '../services/local_storage_service.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/smart_text_parser.dart';
@@ -22,6 +23,42 @@ class CustomerRequestsScreen extends StatefulWidget {
 class _CustomerRequestsScreenState extends State<CustomerRequestsScreen> {
   int selectedRequestIndex = 0;
   String _searchPropertyFilter = 'الكل';
+
+  @override
+  void initState() {
+    super.initState();
+    _startRealtimeListener();
+  }
+
+  void _startRealtimeListener() async {
+    String currentEmail = AppStorageManager.currentEmail;
+    if (currentEmail.isEmpty) {
+      currentEmail = await LocalStorageService.getPersonalGmail();
+    }
+    
+    if (currentEmail.isNotEmpty) {
+      AppStorageManager.listenToMasterDatabase(
+        companyAdminEmail: currentEmail,
+        onDataUpdated: (updatedData) {
+          if (mounted) {
+            setState(() {
+              updatedData.forEach((key, value) {
+                if (value != null) {
+                  AppData.storage[key] = value;
+                }
+              });
+            });
+          }
+        },
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    AppStorageManager.stopMasterDatabaseListener();
+    super.dispose();
+  }
 
   void _showAddRequestDialog({ParsedPropertyData? initialData}) {
     final clientNames = AppDropdowns.getClientNames();

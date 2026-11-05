@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:local_auth/local_auth.dart';
 import '../main.dart';
 import '../services/local_storage_service.dart';
 import '../services/security_manager.dart';
@@ -45,13 +46,13 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _gmailController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _showPassword = false;
-  bool _rememberMe = true; // تفعيل الحفظ تلقائياً لعدم مسح البيانات عند الخروج
+  bool _rememberMe = true;
+  bool _canCheckBiometrics = false;
+  final LocalAuthentication auth = LocalAuthentication();
 
-  final FocusNode _gmailFocus = FocusNode();
   final FocusNode _usernameFocus = FocusNode();
   final FocusNode _passwordFocus = FocusNode();
 
@@ -61,6 +62,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _newUsernameController = TextEditingController();
   final TextEditingController _newPasswordController = TextEditingController();
   final TextEditingController _securityAnswerController = TextEditingController();
+  final TextEditingController _deletePhoneController = TextEditingController();
 
   String selectedSecurityQuestion = 'ما هي مدينة ميلادك؟';
   String selectedUserRole = 'مدخل بيانات';
@@ -78,7 +80,6 @@ class _LoginScreenState extends State<LoginScreen> {
     'مبرمج',
   ];
 
-  // دالة التحقق من صحة رقم التليفون (11 رقم)
   bool _isValidEgyptianPhone(String phone) {
     if (phone.length != 11 || !RegExp(r'^[0-9]+$').hasMatch(phone)) {
       return false;
@@ -91,14 +92,45 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _loadInitialData();
+    _checkBiometricsSupport();
   }
 
+  void _checkBiometricsSupport() async {
+    try {
+      bool canCheck = await auth.canCheckBiometrics || await auth.isDeviceSupported();
+      setState(() => _canCheckBiometrics = canCheck);
+    } catch (_) {}
+  }
+
+  Future<void> _authenticateWithBiometrics() async {
+    try {
+      dynamic dynamicAuth = auth;
+      bool authenticated = await dynamicAuth.authenticate(
+        localizedReason: 'الرجاء إثبات البصمة لتسجيل الدخول السريع للمنظومة',
+      );
+
+      if (authenticated) {
+        final prefs = await SharedPreferences.getInstance();
+        String savedUsername = prefs.getString('saved_username') ?? '01200626469';
+        String savedPassword = prefs.getString('saved_password') ?? '1983';
+
+        _usernameController.text = savedUsername;
+        _passwordController.text = savedPassword;
+        _login();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر الدخول بالبصمة: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+  
   @override
   void dispose() {
-    _gmailController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
-    _gmailFocus.dispose();
     _usernameFocus.dispose();
     _passwordFocus.dispose();
     _companyEmailController.dispose();
@@ -107,6 +139,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _newUsernameController.dispose();
     _newPasswordController.dispose();
     _securityAnswerController.dispose();
+    _deletePhoneController.dispose();
     super.dispose();
   }
 
@@ -119,22 +152,18 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    // تحميل بيانات التذكر دون مسحها إطلاقاً
-    String savedGmail = prefs.getString('saved_gmail') ?? '';
     String savedUsername = prefs.getString('saved_username') ?? '';
     String savedPassword = prefs.getString('saved_password') ?? '';
     bool remember = prefs.getBool('remember_me') ?? true;
 
     setState(() {
       _rememberMe = remember;
-      _gmailController.text = savedGmail;
       _usernameController.text = savedUsername;
       _passwordController.text = savedPassword;
     });
   }
 
   void _login() async {
-    String gmail = _gmailController.text.trim();
     String username = _usernameController.text.trim().replaceAll(' ', '');
     String password = _passwordController.text.trim();
 
@@ -158,16 +187,14 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // توليد الإيميل أوتوماتيكياً بالدومين الموحد @aqarat.com
     String unifiedEmail = "$username@aqarat.com";
 
     bool isValidUser = false;
     bool isMasterOrProgrammer = false;
     String userRole = 'مدير';
     String firstName = 'المدير';
-    String adminGmail = gmail.isNotEmpty ? gmail : 'captain.support640@gmail.com';
+    String adminGmail = 'captain.support640@gmail.com';
 
-    // 1. التحقق للأدمن والمبرمج الرئيسي
     if ((username == '01200626469' || username == '01004026247') && password == '1983') {
       isValidUser = true;
       isMasterOrProgrammer = true;
@@ -175,7 +202,6 @@ class _LoginScreenState extends State<LoginScreen> {
       firstName = username == '01200626469' ? 'الكابتن عبد الجواد' : 'المبرمج الرئيسي';
       adminGmail = 'captain.support640@gmail.com';
     } else {
-      // 2. الفحص في الخريطة المحلية برقم الموبايل
       if (LoginScreen.appUsers.containsKey(username)) {
         final userData = LoginScreen.appUsers[username]!;
         if ((userData['password'] ?? '').toString().trim() == password) {
@@ -186,7 +212,6 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
-      // 3. الفحص أونلاين في شجرة المستخدمين السحابية برقم الموبايل
       if (!isValidUser) {
         try {
           DatabaseEvent event = await FirebaseDatabase.instance.ref().child('companies_storage').once();
@@ -223,7 +248,7 @@ class _LoginScreenState extends State<LoginScreen> {
             }
           }
         } catch (e) {
-          debugPrint("تنبيه الاتصال بالمظومة السحابية (يعمل التسجيل المحلي): $e");
+          debugPrint("تنبيه الاتصال بالمنظومة السحابية: $e");
         }
       }
     }
@@ -288,7 +313,6 @@ class _LoginScreenState extends State<LoginScreen> {
       await LocalStorageService.savePersonalGmail(gmail);
     }
 
-    // حفظ حالة الدخول واسم المستخدم وكلمة السر دائماً لعدم مسحها عند الخروج
     await prefs.setBool('remember_me', true);
     if (!isGuest) {
       await prefs.setString('saved_gmail', gmail);
@@ -298,11 +322,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     String fName = isGuest ? 'زائر (تصفح فقط)' : (LoginScreen.appUsers[username]?['firstName'] ?? 'المدير');
 
-    // إضافة إشعار تسجيل الدخول للمنظومة المركزية
     TrashBinManager.addRealNotification(
-  'تسجيل دخول جديد',
-  'تم دخول $fName بصلاحية (${SecurityManager.currentUserRole}) بنجاح.',
-  );
+      'تسجيل دخول جديد',
+      'تم دخول $fName بصلاحية (${SecurityManager.currentUserRole}) بنجاح.',
+    );
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -317,6 +340,117 @@ class _LoginScreenState extends State<LoginScreen> {
         MaterialPageRoute(builder: (context) => const HomeScreen()),
       );
     }
+  }
+
+  // نافذة إدارة الموظفين: خيار إضافة جديد أو حذف موظف حالي
+  void _showEmployeeManagementChoice() {
+    showDialog(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF2C2C2C),
+          title: const Text('إدارة حسابات الموظفين بالشركة', style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.person_add, color: Colors.greenAccent),
+                title: const Text('إضافة موظف جديد', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                subtitle: const Text('تراخيص وإضافة موظف تحت مظلة الإدارة', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showRegisterDialog();
+                },
+              ),
+              const Divider(color: Colors.grey),
+              ListTile(
+                leading: const Icon(Icons.person_remove, color: Colors.redAccent),
+                title: const Text('حذف موظف متاح', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                subtitle: const Text('إلغاء صلاحية موظف وحذفه من السحابة تماماً', style: TextStyle(color: Colors.grey, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showDeleteEmployeeDialog();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showDeleteEmployeeDialog() {
+    _deletePhoneController.clear();
+    showDialog(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF2C2C2C),
+          title: const Text('حذف موظف وإلغاء صلاحيته', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('أدخل رقم تليفون الموظف المراد حسابه وحذفه من شجرة الشركة بالسحابة:', style: TextStyle(color: Colors.white, fontSize: 13)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _deletePhoneController,
+                keyboardType: TextInputType.phone,
+                style: const TextStyle(color: Colors.white),
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(11),
+                ],
+                decoration: const InputDecoration(
+                  labelText: 'رقم موبايل الموظف (11 رقم)',
+                  labelStyle: TextStyle(color: Colors.amber),
+                  prefixIcon: Icon(Icons.phone_android, color: Colors.amber),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700),
+              onPressed: () async {
+                String phoneToDelete = _deletePhoneController.text.trim();
+                if (!_isValidEgyptianPhone(phoneToDelete)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('يرجى إدخال رقم تليفون صحيح مكون من 11 رقم!'), backgroundColor: Colors.orange),
+                  );
+                  return;
+                }
+
+                String companyAdminEmail = await LocalStorageService.getPersonalGmail();
+                bool deleted = await AppStorageManager.deleteEmployeeFromTree(
+                  companyAdminEmail: companyAdminEmail,
+                  employeePhone: phoneToDelete,
+                );
+
+                LoginScreen.appUsers.remove(phoneToDelete);
+                await LocalStorageService.saveAppUsers(LoginScreen.appUsers);
+
+                if (mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(deleted ? 'تم حذف الموظف ($phoneToDelete) بنجاح وإلغاء صلاحياته!' : 'تم مسح الحساب محلياً وجاري المزامنة مع السحابة.'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              },
+              child: const Text('حذف الموظف نهائياً', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showRegisterDialog() {
@@ -670,22 +804,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 20),
                       TextField(
-                        controller: _gmailController,
-                        focusNode: _gmailFocus,
-                        style: const TextStyle(color: Colors.cyanAccent),
-                        keyboardType: TextInputType.emailAddress,
-                        onSubmitted: (_) => FocusScope.of(context).requestFocus(_usernameFocus),
-                        decoration: InputDecoration(
-                          labelText: 'الجيميل الرئيسي للشركة (اختياري للموظف)',
-                          labelStyle: const TextStyle(color: Colors.cyanAccent),
-                          filled: true,
-                          fillColor: const Color(0xFF2C2C2C),
-                          prefixIcon: const Icon(Icons.mark_email_read, color: Colors.cyanAccent),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(
                         controller: _usernameController,
                         focusNode: _usernameFocus,
                         keyboardType: TextInputType.phone,
@@ -737,17 +855,28 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                       ),
                       const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.amber,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.amber,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              onPressed: _login,
+                              child: const Text('دخول للسيستم', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
+                            ),
                           ),
-                          onPressed: _login,
-                          child: const Text('دخول للسيستم', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
-                        ),
+                          if (_canCheckBiometrics) ...[
+                            const SizedBox(width: 10),
+                            IconButton(
+                              onPressed: _authenticateWithBiometrics,
+                              icon: const Icon(Icons.fingerprint, color: Colors.cyanAccent, size: 36),
+                              tooltip: 'دخول سريع بالبصمة',
+                            ),
+                          ]
+                        ],
                       ),
                       const SizedBox(height: 10),
                       SizedBox(
@@ -771,8 +900,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: const Text('نسيت كلمة السر؟', style: TextStyle(color: Colors.cyanAccent, fontSize: 12)),
                           ),
                           TextButton(
-                            onPressed: _showRegisterDialog,
-                            child: const Text('تسجيل حساب جديد', style: TextStyle(color: Colors.amberAccent, fontSize: 12)),
+                            onPressed: _showEmployeeManagementChoice,
+                            child: const Text('إدارة حسابات الموظفين', style: TextStyle(color: Colors.amberAccent, fontSize: 12)),
                           ),
                         ],
                       ),

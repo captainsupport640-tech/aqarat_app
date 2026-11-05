@@ -3,6 +3,7 @@ import '../app_data.dart';
 import '../app_dropdowns.dart';
 import '../services/local_storage_service.dart';
 import '../services/cloud_sync_service.dart';
+import '../app_storage_manager.dart';
 import '../services/smart_text_parser.dart';
 import '01_clients_screen.dart';
 import '02_brokers_screen.dart';
@@ -32,6 +33,41 @@ class _ForSaleScreenState extends State<ForSaleScreen> {
   ];
 
   String selectedSearchFilter = 'الكل';
+@override
+  void initState() {
+    super.initState();
+    _startRealtimeListener();
+  }
+
+  void _startRealtimeListener() async {
+    String currentEmail = AppStorageManager.currentEmail;
+    if (currentEmail.isEmpty) {
+      currentEmail = await LocalStorageService.getPersonalGmail();
+    }
+    
+    if (currentEmail.isNotEmpty) {
+      AppStorageManager.listenToMasterDatabase(
+        companyAdminEmail: currentEmail,
+        onDataUpdated: (updatedData) {
+          if (mounted) {
+            setState(() {
+              updatedData.forEach((key, value) {
+                if (value != null) {
+                  AppData.storage[key] = value;
+                }
+              });
+            });
+          }
+        },
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    AppStorageManager.stopMasterDatabaseListener();
+    super.dispose();
+  }
 
   String _getNextCode() {
     final propertiesList = AppData.storage['العقارات المعروضة للبيع'] ?? [];

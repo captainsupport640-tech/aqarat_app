@@ -3,6 +3,7 @@ import '../app_data.dart';
 import '../app_dropdowns.dart';
 import '../services/local_storage_service.dart';
 import '../services/cloud_sync_service.dart';
+import '../app_storage_manager.dart';
 import '01_clients_screen.dart';
 import '02_brokers_screen.dart';
 import '03_customer_requests_screen.dart';
@@ -21,6 +22,41 @@ class AccountsScreen extends StatefulWidget {
 }
 
 class _AccountsScreenState extends State<AccountsScreen> {
+@override
+  void initState() {
+    super.initState();
+    _startRealtimeListener();
+  }
+
+  void _startRealtimeListener() async {
+    String currentEmail = AppStorageManager.currentEmail;
+    if (currentEmail.isEmpty) {
+      currentEmail = await LocalStorageService.getPersonalGmail();
+    }
+    
+    if (currentEmail.isNotEmpty) {
+      AppStorageManager.listenToMasterDatabase(
+        companyAdminEmail: currentEmail,
+        onDataUpdated: (updatedData) {
+          if (mounted) {
+            setState(() {
+              updatedData.forEach((key, value) {
+                if (value != null) {
+                  AppData.storage[key] = value;
+                }
+              });
+            });
+          }
+        },
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    AppStorageManager.stopMasterDatabaseListener();
+    super.dispose();
+  }  
   void _showAddExpenseDialog() {
     String selectedExpenseCategory = AppDropdowns.expenseCategories.first;
     final amountController = TextEditingController();

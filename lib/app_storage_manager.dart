@@ -82,7 +82,8 @@ class AppStorageManager {
   }
 
   static String _cleanCompanyKey(String adminEmail) {
-    return adminEmail.trim().toLowerCase().replaceAll('@', '_at_').replaceAll('.', '_');
+    String emailToClean = adminEmail.trim().isEmpty ? 'captain.support640@gmail.com' : adminEmail.trim();
+    return emailToClean.toLowerCase().replaceAll('@', '_at_').replaceAll('.', '_');
   }
 
   /// توليد معرف العميل الموحد بالدومين
@@ -206,7 +207,7 @@ class AppStorageManager {
     _masterDatabaseSubscription = null;
   }
 
-  /// تسجيل الموظف أوتوماتيكياً في فرع الحسابات والشجرة مع الصلاحية وكلمة المرور ورقم التليفون
+  /// تسجيل الموظف أوتوماتيكياً في فرع الحسابات وشجرة الإدارة مع الصلاحية وكلمة المرور ورقم التليفون
   static Future<void> registerEmployeeInTree({
     required String companyAdminEmail,
     required String employeePhone,
@@ -215,15 +216,16 @@ class AppStorageManager {
     required String role,
   }) async {
     try {
-      if (companyAdminEmail.isEmpty || employeePhone.isEmpty) return;
       String companyKey = _cleanCompanyKey(companyAdminEmail);
       String cleanPhone = employeePhone.trim();
+      if (cleanPhone.isEmpty) return;
       
       Map<String, dynamic> dataToSave = {
         'name': employeeName.trim(),
         'phone': cleanPhone,
         'password': password,
         'role': role,
+        'company_admin_email': companyAdminEmail.isEmpty ? 'captain.support640@gmail.com' : companyAdminEmail,
         'created_at': DateTime.now().toIso8601String(),
       };
 
@@ -244,5 +246,34 @@ class AppStorageManager {
             .set(dataToSave);
       }
     } catch (_) {}
+  }
+
+  /// حذف الموظف نهائياً من شجرة الإدارة بالسحابة لإلغاء صلاحية دخوله المنظومة
+  static Future<bool> deleteEmployeeFromTree({
+    required String companyAdminEmail,
+    required String employeePhone,
+  }) async {
+    try {
+      String companyKey = _cleanCompanyKey(companyAdminEmail);
+      String cleanPhone = employeePhone.trim();
+      if (cleanPhone.isEmpty) return false;
+
+      if (_useRestApi) {
+        final url = Uri.parse("$_dbUrl/companies_storage/$companyKey/2_employees_tree/$cleanPhone.json");
+        final response = await http.delete(url);
+        return response.statusCode == 200 || response.statusCode == 204;
+      } else {
+        await FirebaseDatabase.instance
+            .ref()
+            .child('companies_storage')
+            .child(companyKey)
+            .child('2_employees_tree')
+            .child(cleanPhone)
+            .remove();
+        return true;
+      }
+    } catch (_) {
+      return false;
+    }
   }
 }
