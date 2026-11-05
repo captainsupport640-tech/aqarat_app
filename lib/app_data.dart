@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'services/local_storage_service.dart';
 import 'services/security_manager.dart';
+import 'services/cloud_sync_service.dart';
 
 class AppData {
   static final Map<String, List> storage = {
@@ -20,7 +22,7 @@ class AppData {
   };
 }
 
-// دالة بناء الجدول الديناميكي الموحدة (مربوطة بسلة المهملات والحفظ التلقائي)
+// دالة بناء الجدول الديناميكي الموحدة (محصنة تماماً ضد الشاشة البيضاء والتهنيج)
 Widget buildDynamicTable({
   required List<String> headers,
   required List data,
@@ -29,11 +31,9 @@ Widget buildDynamicTable({
 }) {
   final List<String> fullHeaders = [...headers, 'حذف'];
 
-  // فحص الصلاحية لفتح الحذف للمبرمج والمدير أو من لديه الصلاحية
-  bool canDelete = 
-      SecurityManager.currentUserRole == 'مبرمج' || 
-      SecurityManager.currentUserRole == 'مدير' ||
-      SecurityManager.currentUserRole == 'نائب المدير';
+  // الاعتماد على الصلاحية المركزية المفتوحة لكل الأدوار (ما عدا الضيف)
+  bool canDelete = SecurityManager.canDelete;
+
   return Container(
     width: double.infinity,
     decoration: BoxDecoration(
@@ -63,13 +63,13 @@ Widget buildDynamicTable({
                       .toList(),
                   rows: data.asMap().entries.map((entry) {
                     int index = entry.key;
-                    Map<String, String> rowData = entry.value;
+                    Map<String, dynamic> rowData = entry.value is Map ? Map<String, dynamic>.from(entry.value) : {};
                     List<String> keys = headers.sublist(1); // تخطي عمود 'م'
                     
                     return DataRow(
                       cells: [
                         DataCell(Text('${index + 1}')),
-                        ...keys.map((key) => DataCell(Text(rowData[key] ?? ''))),
+                        ...keys.map((key) => DataCell(Text(rowData[key]?.toString() ?? ''))),
                         DataCell(
                           IconButton(
                             icon: Icon(
@@ -77,22 +77,32 @@ Widget buildDynamicTable({
                               color: canDelete ? Colors.red : Colors.grey,
                               size: 20,
                             ),
-                            tooltip: canDelete ? 'حذف السجل لنقله إلى سلة المهملات' : 'عفواً، ليس لديك صلاحية للحذف',
+                            tooltip: canDelete ? 'حذف السجل لنقله إلى سلة المهملات' : 'عفواً، حساب الضيف لا يملك صلاحية الحذف',
                             onPressed: canDelete
                                 ? () async {
                                     if (screenName != null && AppData.storage.containsKey(screenName)) {
-                                      final itemToDelete = AppData.storage[screenName]![index];
-                                      TrashBinManager.moveToTrash(screenName, itemToDelete);
+                                      final rawItem = AppData.storage[screenName]![index];
+                                      Map<String, String> itemToDelete = rawItem is Map 
+                                          ? Map<String, String>.from(rawItem.map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')))
+                                          : {};
 
+                                      // 1. نقل لسلة المهملات والحذف من ذاكرة الجدول فوراً
+                                      TrashBinManager.moveToTrash(screenName, itemToDelete);
                                       AppData.storage[screenName]?.removeAt(index);
+                                      
+                                      // 2. إعادة رسم الواجهة فوراً لتحديث السطور
+                                      onRefresh?.call();
+
+                                      // 3. الحفظ المحلي السريع على الجهاز
                                       await LocalStorageService.saveLocally();
 
-                                      onRefresh?.call();
+                                      // 4. المزامنة السحابية في الخلفية تماماً لمنع الشاشة البيضاء والتهنيج
+                                      unawaited(CloudSyncService.syncToCloud(isAuto: true));
 
                                       if (context.mounted) {
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           SnackBar(
-                                            content: Text('تم نقل السجل من ($screenName) إلى سلة المهملات بنجاح!'),
+                                            content: Text('تم نقل السجل من ($screenName) إلى سلة المهملات ومزامنة السحابة بنجاح!'),
                                             backgroundColor: Colors.orange.shade800,
                                             duration: const Duration(seconds: 2),
                                           ),
@@ -100,7 +110,7 @@ Widget buildDynamicTable({
                                       }
                                     }
                                   }
-                                : null, // يتعطل الزر فقط لو المستخدم ليس مبرمجاً أو مديراً وليس له صلاحية
+                                : null,
                           ),
                         ),
                       ],
@@ -115,9 +125,11 @@ Widget buildDynamicTable({
     ),
   );
 }
-// دالة نافذة الإضافة مع فحص 11 رقم للتليفون وتاريخ اليوم
+
+// دالة نافذة الإضافة مع فحص 11 رقم للتليفون وتاريخ اليوم الديناميكي والمزامنة في الخلفية
 void showFormDialog(BuildContext context, String screenTitle, List<String> fields, VoidCallback onRefresh) {
-  final String todayDate = '10/04/2026';
+  final now = DateTime.now();
+  final String todayDate = "${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}";
 
   final Map<String, TextEditingController> controllers = {
     for (var field in fields)
@@ -146,14 +158,19 @@ void showFormDialog(BuildContext context, String screenTitle, List<String> field
 
     final Map<String, String> newRow = {};
     controllers.forEach((key, controller) {
-      newRow[key] = controller.text;
+      newRow[key] = controller.text.trim().isEmpty ? '-' : controller.text.trim();
     });
 
-    if (AppData.storage.containsKey(screenTitle)) {
-      AppData.storage[screenTitle]!.add(newRow);
+    if (!AppData.storage.containsKey(screenTitle) || AppData.storage[screenTitle] == null) {
+      AppData.storage[screenTitle] = [];
     }
+    AppData.storage[screenTitle]!.add(newRow);
 
+    // الحفظ المحلي السريع
     await LocalStorageService.saveLocally();
+    
+    // المزامنة السحابية في الخلفية لمنع ثقل الشاشات
+    unawaited(CloudSyncService.syncToCloud(isAuto: true));
 
     if (context.mounted) {
       Navigator.pop(context);
@@ -161,7 +178,7 @@ void showFormDialog(BuildContext context, String screenTitle, List<String> field
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('تمت إضافة السجل بنجاح إلى ($screenTitle) وحفظه'),
+          content: Text('تمت إضافة السجل بنجاح إلى ($screenTitle) ومزامنة السحابة'),
           backgroundColor: Colors.green.shade800,
         ),
       );
@@ -256,7 +273,8 @@ void showFormDialog(BuildContext context, String screenTitle, List<String> field
 class TrashBinManager {
   static void moveToTrash(String screenName, Map<String, String> itemData) {
     if (!AppData.storage.containsKey('trash_bin') || AppData.storage['trash_bin'] == null) {
-        AppData.storage['trash_bin'] = [];    }
+      AppData.storage['trash_bin'] = [];
+    }
     
     final now = DateTime.now();
     final dateStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
@@ -278,14 +296,12 @@ class TrashBinManager {
     final now = DateTime.now();
     final timeStr = "${now.hour}:${now.minute.toString().padLeft(2, '0')} - ${now.year}/${now.month}/${now.day}";
     
-    // إضافة الإشعار الجديد في أول القائمة (فوق خالص)
     (AppData.storage['الإشعارات'] as List).insert(0, {
       'العنوان': title,
       'التفاصيل': body,
       'التاريخ': timeStr,
     });
 
-    // وضع حد أقصى للإشعارات (آخر 25 إشعار فقط) ولو زادوا يتم مسح القديم تلقائياً
     const int maxNotifications = 25;
     if ((AppData.storage['الإشعارات'] as List).length > maxNotifications) {
       (AppData.storage['الإشعارات'] as List).removeRange(

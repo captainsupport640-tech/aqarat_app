@@ -6,6 +6,7 @@ import '../app_data.dart';
 import '../app_storage_manager.dart';
 import '../services/local_storage_service.dart';
 import '../services/cloud_sync_service.dart';
+import '../services/security_manager.dart';
 import '02_brokers_screen.dart';
 import '03_customer_requests_screen.dart';
 import '04_for_sale_screen.dart';
@@ -215,6 +216,8 @@ class _ClientsScreenState extends State<ClientsScreen> {
   }
 
   void _showAddClientDialog() {
+    if (!SecurityManager.checkActionPermission(context, actionName: 'إضافة عميل')) return;
+
     nameController.clear();
     phone1Controller.clear();
     phone2Controller.clear();
@@ -344,6 +347,61 @@ class _ClientsScreenState extends State<ClientsScreen> {
         ],
       ),
     );
+  }
+
+  // دالة الحذف الجذرية المؤبدة لجدول العملاء
+  Future<void> _deleteClientRecord(int index) async {
+    if (!SecurityManager.checkActionPermission(context, actionName: 'حذف عميل')) return;
+
+    final rawList = AppData.storage['بيانات العملاء'];
+    if (rawList is! List || index >= rawList.length) return;
+
+    bool confirm = await showDialog(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF2C2C2C),
+          title: const Text('تأكيد الحذف', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+          content: const Text('هل تريد حقاً نقل هذا العميل إلى سلة المهملات؟', style: TextStyle(color: Colors.white)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء', style: TextStyle(color: Colors.grey))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('حذف ونقل للسلة', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    ) ?? false;
+
+    if (!confirm) return;
+
+    setState(() {
+      if (!AppData.storage.containsKey('trash_bin') || AppData.storage['trash_bin'] == null) {
+        AppData.storage['trash_bin'] = [];
+      }
+
+      final itemToDelete = rawList[index];
+      Map<String, dynamic> deletedItem = itemToDelete is Map ? Map<String, dynamic>.from(itemToDelete) : {};
+      final now = DateTime.now();
+      deletedItem['source_screen'] = 'بيانات العملاء';
+      deletedItem['deleted_date'] = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+
+      (AppData.storage['trash_bin'] as List).add(deletedItem);
+      rawList.removeAt(index);
+    });
+
+    await LocalStorageService.saveLocally();
+    CloudSyncService.syncToCloud(isAuto: true);
+    _syncDataToCloud();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم نقل العميل إلى سلة المهملات وتحديث السحابة بنجاح'), backgroundColor: Colors.orange),
+      );
+    }
   }
 
   @override
@@ -571,31 +629,8 @@ class _ClientsScreenState extends State<ClientsScreen> {
                                             DataCell(
                                               IconButton(
                                                 icon: const Icon(Icons.delete_forever, color: Colors.redAccent, size: 20),
-                                                onPressed: () async {
-                                                  setState(() {
-                                                    if (!AppData.storage.containsKey('trash_bin') || AppData.storage['trash_bin'] == null) {
-                                                      AppData.storage['trash_bin'] = [];
-                                                    }
-
-                                                    Map<String, dynamic> deletedItem = Map<String, dynamic>.from(item);
-                                                    final now = DateTime.now();
-                                                    deletedItem['source_screen'] = 'بيانات العملاء';
-                                                    deletedItem['deleted_date'] = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
-
-                                                    (AppData.storage['trash_bin'] as List).add(deletedItem);
-                                                    clientsList.removeAt(index);
-                                                  });
-
-                                                  await LocalStorageService.saveLocally();
-                                                  CloudSyncService.syncToCloud(isAuto: true);
-                                                  _syncDataToCloud();
-
-                                                  if (mounted) {
-                                                    ScaffoldMessenger.of(context).showSnackBar(
-                                                      const SnackBar(content: Text('تم نقل العميل إلى سلة المهملات وتحديث السحابة بنجاح'), backgroundColor: Colors.orange),
-                                                    );
-                                                  }
-                                                },
+                                                tooltip: 'حذف العميل',
+                                                onPressed: () => _deleteClientRecord(index),
                                               ),
                                             ),
                                           ],

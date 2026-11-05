@@ -13,10 +13,13 @@ class CloudSyncService {
   static const String _dbUrl = "https://aqarat-captain-default-rtdb.firebaseio.com";
   static StreamSubscription? _realtimeSubscription;
 
-  /// 0️⃣ تهيئة دعم الأوفلاين بأمان تام مع تفعيل الـ Cache المحلي
+  /// فحص هل البيئة تعمل برست API (على الويب أو على الويندوز لمنع خطأ MissingPluginException)
+  static bool get _useRestApi => kIsWeb || defaultTargetPlatform == TargetPlatform.windows;
+
+  /// 0️⃣ تهيئة دعم الأوفلاين بأمان تام
   static void initOfflineSupport() {
     try {
-      if (!kIsWeb) {
+      if (!_useRestApi) {
         FirebaseDatabase.instance.setPersistenceEnabled(true);
       }
     } catch (e) {
@@ -43,7 +46,7 @@ class CloudSyncService {
       _realtimeSubscription?.cancel();
       String syncKey = await _getDualSyncKey();
 
-      if (!kIsWeb) {
+      if (!_useRestApi) {
         DatabaseReference ref = FirebaseDatabase.instance.ref("companies_storage/$syncKey/1_master_database/data");
         _realtimeSubscription = ref.onValue.listen((event) async {
           if (event.snapshot.exists && event.snapshot.value != null) {
@@ -77,7 +80,8 @@ class CloudSyncService {
         'email': companyEmail,
       };
 
-      if (kIsWeb) {
+      // استخدام REST API على الويب وعلى الويندوز لمنع MissingPluginException
+      if (_useRestApi) {
         final masterUrl = Uri.parse("$_dbUrl/companies_storage/$syncKey/1_master_database.json");
         final response = await http.put(
           masterUrl,
@@ -93,12 +97,12 @@ class CloudSyncService {
             'user_phone': currentPhone,
             'user_email': '$currentPhone@aqarat.com',
             'timestamp': nowIso,
-            'action': 'مزامنة وتحديث البيانات من الويب',
+            'action': 'مزامنة وتحديث البيانات عبر REST API',
           }),
         ).timeout(const Duration(seconds: 10));
 
         if (response.statusCode == 200 || response.statusCode == 204) {
-          debugPrint('✅ تم الرفع والمزامنة الموحدة بنجاح عبر REST API للويب.');
+          debugPrint('✅ تم الرفع والمزامنة الموحدة بنجاح عبر REST API.');
           return null;
         } else {
           return 'خطأ سيرفر فايربيس (كود ${response.statusCode}): ${response.body}';
@@ -148,7 +152,7 @@ class CloudSyncService {
       String syncKey = await _getDualSyncKey();
       Map? rawData;
 
-      if (kIsWeb) {
+      if (_useRestApi) {
         final url = Uri.parse("$_dbUrl/companies_storage/$syncKey/1_master_database.json");
         final response = await http.get(url).timeout(const Duration(seconds: 8));
         if (response.statusCode == 200 && response.body != 'null') {

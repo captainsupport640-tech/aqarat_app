@@ -1,13 +1,20 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:http/http.dart' as http;
 import 'services/local_storage_service.dart';
 
 class AppStorageManager {
+  static const String _dbUrl = "https://aqarat-captain-default-rtdb.firebaseio.com";
   static String currentUserRole = 'ضيف';
   static String currentUsername = '';
   static String currentEmail = '';
   static StreamSubscription<DatabaseEvent>? _masterDatabaseSubscription;
+
+  /// فحص هل البيئة تعمل برست API (على الويب أو الويندوز لمنع MissingPluginException)
+  static bool get _useRestApi => kIsWeb || defaultTargetPlatform == TargetPlatform.windows;
 
   static Future<void> setCurrentUser({
     required String username,
@@ -23,7 +30,6 @@ class AppStorageManager {
     await prefs.setString('current_role', role);
     await prefs.setString('current_email', email);
 
-    // [تعديل جذري هامة جداً]: استدعاء التحميل المحلي فور ضبط المستخدم لملء الذاكرة بالبيانات المحفوظة مسبقاً
     await LocalStorageService.loadLocally();
   }
 
@@ -34,7 +40,6 @@ class AppStorageManager {
       currentUserRole = prefs.getString('current_role') ?? 'ضيف';
       currentEmail = prefs.getString('current_email') ?? '';
 
-      // ضمان استرجاع البيانات المحلية للجداول فور تشغيل الملف
       await LocalStorageService.loadLocally();
     } catch (_) {}
   }
@@ -96,17 +101,28 @@ class AppStorageManager {
       if (companyAdminEmail.isEmpty) return false;
 
       String companyKey = _cleanCompanyKey(companyAdminEmail);
-      DatabaseReference companyRef = FirebaseDatabase.instance.ref().child('companies_storage').child(companyKey);
-
       String nowIso = DateTime.now().toIso8601String();
 
-      await companyRef.child('1_master_database').set({
+      Map<String, dynamic> payload = {
         'data': appData,
         'last_updated': nowIso,
         'updated_by_phone': currentPhone,
-      });
+      };
 
-      return true;
+      if (_useRestApi) {
+        final url = Uri.parse("$_dbUrl/companies_storage/$companyKey/1_master_database.json");
+        final response = await http.put(
+          url,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(payload),
+        ).timeout(const Duration(seconds: 10));
+
+        return response.statusCode == 200 || response.statusCode == 204;
+      } else {
+        DatabaseReference companyRef = FirebaseDatabase.instance.ref().child('companies_storage').child(companyKey);
+        await companyRef.child('1_master_database').set(payload).timeout(const Duration(seconds: 10));
+        return true;
+      }
     } catch (e) {
       return false;
     }
@@ -117,18 +133,29 @@ class AppStorageManager {
       if (companyAdminEmail.isEmpty) return null;
 
       String companyKey = _cleanCompanyKey(companyAdminEmail);
-      DataSnapshot snapshot = await FirebaseDatabase.instance
-          .ref()
-          .child('companies_storage')
-          .child(companyKey)
-          .child('1_master_database')
-          .child('data')
-          .get();
 
-      if (snapshot.exists && snapshot.value != null) {
-        return Map<String, dynamic>.from(snapshot.value as Map);
+      if (_useRestApi) {
+        final url = Uri.parse("$_dbUrl/companies_storage/$companyKey/1_master_database/data.json");
+        final response = await http.get(url).timeout(const Duration(seconds: 8));
+        if (response.statusCode == 200 && response.body != 'null') {
+          return jsonDecode(response.body);
+        }
+        return null;
+      } else {
+        DataSnapshot snapshot = await FirebaseDatabase.instance
+            .ref()
+            .child('companies_storage')
+            .child(companyKey)
+            .child('1_master_database')
+            .child('data')
+            .get()
+            .timeout(const Duration(seconds: 8));
+
+        if (snapshot.exists && snapshot.value != null) {
+          return Map<String, dynamic>.from(snapshot.value as Map);
+        }
+        return null;
       }
-      return null;
     } catch (e) {
       return null;
     }
@@ -143,7 +170,7 @@ class AppStorageManager {
   }) async {
     if (companyAdminEmail.isEmpty) return;
 
-    // جلب البيانات القديمة فوراً عند الفتح لضمان التزامن الثنائي
+    // جلب البيانات فوراً لمنع التأخير
     dynamic initialData = await fetchMasterDatabase(companyAdminEmail);
     if (initialData != null && initialData is Map) {
       try {
@@ -152,7 +179,8 @@ class AppStorageManager {
       } catch (_) {}
     }
 
-    // إلغاء أي استماع سابق لتجنب التكرار
+    if (_useRestApi) return; // الاعتماد على السحب المباشر في بيئة REST API لمنع أخطاء البلاغين
+
     _masterDatabaseSubscription?.cancel();
 
     String companyKey = _cleanCompanyKey(companyAdminEmail);
@@ -195,17 +223,26 @@ class AppStorageManager {
         'name': employeeName.trim(),
         'phone': cleanPhone,
         'password': password,
-        'role': role, // الصلاحية مباشرة بجانب البيانات
+        'role': role,
         'created_at': DateTime.now().toIso8601String(),
       };
 
-      await FirebaseDatabase.instance
-          .ref()
-          .child('companies_storage')
-          .child(companyKey)
-          .child('2_employees_tree')
-          .child(cleanPhone)
-          .set(dataToSave);
+      if (_useRestApi) {
+        final url = Uri.parse("$_dbUrl/companies_storage/$companyKey/2_employees_tree/$cleanPhone.json");
+        await http.put(
+          url,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(dataToSave),
+        );
+      } else {
+        await FirebaseDatabase.instance
+            .ref()
+            .child('companies_storage')
+            .child(companyKey)
+            .child('2_employees_tree')
+            .child(cleanPhone)
+            .set(dataToSave);
+      }
     } catch (_) {}
   }
 }

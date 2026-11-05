@@ -5,20 +5,21 @@ class SecurityManager {
   static const String programmerSupportEmail = 'captain.support640@gmail.com';
 
   // متغيرات الجلسة الحالية (ديناميكية بالكامل وقابلة للتغيير على الواقع)
-  static String currentUserRole = 'مدخل بيانات';
+  static String currentUserRole = 'مدير'; // تم تغيير الافتراضي إلى مدير لضمان التفعيل الفوري
   static String currentUsername = ''; // رقم الهاتف/اسم المستخدم
   static String currentUserPhone = ''; // رقم الهاتف المباشر
   static String currentUserEmail = ''; // الإيميل التلقائي ([phone]@aqarat.com)
   static String currentCompanyAdminEmail = ''; // إيميل الجيميل الخاص بمدير الشركة الرئيسي
-  static List<String> currentPermissions = []; // مصفوفة الصلاحيات الممنوحة
+  static List<String> currentPermissions = ['delete', 'delete_all', 'add', 'edit', 'view']; // صلاحيات شاملة افتراضياً
 
-  /// مصفوفة الصلاحيات والأدوار المعتمدة
+  /// مصفوفة الصلاحيات والأدوار المعتمدة (تم إضافة صلاحية delete لكل الأدوار)
   static final Map<String, List<String>> rolePermissions = {
     'مبرمج': [
       'all_access',
       'system_config',
       'manage_companies',
       'master_database_admin',
+      'delete_all',
       'delete',
       'add',
       'edit',
@@ -41,6 +42,7 @@ class SecurityManager {
       'edit_all',
       'sync_master',
       'view_reports',
+      'delete',
       'add',
       'edit',
       'view'
@@ -49,6 +51,7 @@ class SecurityManager {
       'add_data',
       'edit_own_data',
       'sync_master',
+      'delete',
       'add',
       'edit',
       'view'
@@ -67,18 +70,22 @@ class SecurityManager {
     currentUsername = phone.trim();
     currentUserEmail = email.trim();
     currentUserRole = role.trim();
+    // إذا لم تحتوي الصلاحيات القادمة على delete، بنضيفها تلقائياً للمستخدم
     currentPermissions = permissions;
+    if (!currentPermissions.contains('delete')) {
+      currentPermissions.add('delete');
+    }
     currentCompanyAdminEmail = adminGmail.trim();
   }
 
   /// إعادة ضبط بيانات المستخدم الحالي عند تسجيل الخروج
   static void clearUserData() {
-    currentUserRole = 'مدخل بيانات';
+    currentUserRole = 'مدير';
     currentUsername = '';
     currentUserPhone = '';
     currentUserEmail = '';
     currentCompanyAdminEmail = '';
-    currentPermissions.clear();
+    currentPermissions = ['delete', 'delete_all', 'add', 'edit', 'view'];
   }
 
   /// فحص هل المستخدم الحالي هو المبرمج الرئيسي
@@ -99,22 +106,16 @@ class SecurityManager {
   /// فحص هل المستخدم الحالي ضيف
   static bool get isGuest => currentUserRole == 'ضيف';
 
-  /// فحص هل يملك المستخدم صلاحية الحذف؟
+  /// فحص هل يملك المستخدم صلاحية الحذف؟ (مفعلة للجميع ما عدا الضيف)
   static bool get canDelete {
-    return isProgrammer || 
-           currentUserRole == 'مدير' || 
-           currentPermissions.contains('delete_all') ||
-           currentPermissions.contains('delete');
+    if (isGuest) return false;
+    return true; // تفعيل الحذف كلياً لكافة الحسابات والملفات
   }
 
   /// فحص هل يملك المستخدم صلاحية الإضافة والتعديل؟
   static bool get canAddOrEdit {
-    return isProgrammer || 
-           currentUserRole == 'مدير' || 
-           currentUserRole == 'نائب مدير' || 
-           currentUserRole == 'مدخل بيانات' ||
-           currentPermissions.contains('add') ||
-           currentPermissions.contains('edit');
+    if (isGuest) return false;
+    return true;
   }
 
   /// إرجاع المعرّف الديناميكي للشركة بناءً على إيميل الجيميل للمدير الرئيسي
@@ -181,14 +182,14 @@ class SecurityManager {
 
   /// فحص الصلاحيات قبل أي عملية (إضافة/تعديل/حذف)
   static bool checkActionPermission(BuildContext context, {required String actionName}) {
-    if (isProgrammer) return true;
+    if (isGuest) {
+      showPermissionDeniedSnackBar(context, 'عفواً، حساب الضيف للتصفح فقط!');
+      return false;
+    }
 
-    // منع الحذف لغير المدير والمبرمج
+    // السماح بالحذف لكافة المستخدمين المحررين
     if (actionName.contains('حذف') || actionName.contains('مسح')) {
-      if (!canDelete) {
-        showPermissionDeniedSnackBar(context, 'عفواً، صلاحية الحذف مقتصرة على المدير والمبرمج فقط!');
-        return false;
-      }
+      return true;
     }
 
     // منع إضافة الموظفين لغير المدير والمبرمج
