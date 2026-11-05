@@ -27,12 +27,19 @@ class NotificationItem {
 
 class NotificationService {
   
-  /// جلب جميع التنبيهات الحقيقية النشطة من قاعدة البيانات
-  static List<NotificationItem> getAllActiveNotifications() {
-    List<NotificationItem> notifications = [];
+  /// جلب قائمة المعرّفات المقروءة بشكل مضمون
+  static List<String> _getReadIds() {
+    if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
+      AppData.storage['read_notifications'] = <String>[];
+    }
+    final rawList = AppData.storage['read_notifications']!;
+    return rawList.map((e) => e.toString()).toList();
+  }
 
-    // جلب معرّفات الإشعارات المقروءة المحفوظة سابقاً
-    List readIds = AppData.storage['read_notifications'] ?? [];
+  /// جلب جميع التنبيهات النشطة غير المقروءة فقط أو إجمالي التنبيهات
+  static List<NotificationItem> getAllActiveNotifications({bool unreadOnly = false}) {
+    List<NotificationItem> notifications = [];
+    List<String> readIds = _getReadIds();
 
     // 1️⃣ تنبيهات شاشة طلبات العملاء (العقارات المطابقة المتاحة للطلبات)
     _extractCustomerRequestNotifications(notifications, readIds);
@@ -43,11 +50,15 @@ class NotificationService {
     // 3️⃣ تنبيهات شاشة الحسابات والتذكيرات المالية (الإيجارات والفواتير والالتزامات)
     _extractAccountReminderNotifications(notifications, readIds);
 
+    if (unreadOnly) {
+      return notifications.where((n) => !n.isRead).toList();
+    }
+
     return notifications;
   }
 
   /// استخراج تنبيهات طلبات العملاء والعقارات المطابقة
-  static void _extractCustomerRequestNotifications(List<NotificationItem> list, List readIds) {
+  static void _extractCustomerRequestNotifications(List<NotificationItem> list, List<String> readIds) {
     try {
       List requests = AppData.storage['طلبات العملاء'] ?? [];
       for (var req in requests) {
@@ -90,7 +101,7 @@ class NotificationService {
   }
 
   /// استخراج تنبيهات المعاينات
-  static void _extractInspectionNotifications(List<NotificationItem> list, List readIds) {
+  static void _extractInspectionNotifications(List<NotificationItem> list, List<String> readIds) {
     try {
       List inspections = AppData.storage['المعاينات'] ?? [];
       for (var insp in inspections) {
@@ -121,7 +132,7 @@ class NotificationService {
   }
 
   /// استخراج تنبيهات الحسابات والتذكيرات المالية الإيجارية
-  static void _extractAccountReminderNotifications(List<NotificationItem> list, List readIds) {
+  static void _extractAccountReminderNotifications(List<NotificationItem> list, List<String> readIds) {
     try {
       List reminders = AppData.storage['التذكيرات المالية'] ?? [];
       for (var rem in reminders) {
@@ -152,12 +163,12 @@ class NotificationService {
     }
   }
 
-  /// تعيين إشعار كمقروء وحفظه محلياً والسحابية
+  /// تعيين إشعار كمقروء وحفظه محلياً والسحابية بشكل دائم
   static Future<void> markAsRead(String id) async {
     if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
-      AppData.storage['read_notifications'] = [];
+      AppData.storage['read_notifications'] = <String>[];
     }
-    List readList = AppData.storage['read_notifications'] as List;
+    List readList = AppData.storage['read_notifications']!;
     if (!readList.contains(id)) {
       readList.add(id);
       await LocalStorageService.saveLocally();
@@ -165,13 +176,13 @@ class NotificationService {
     }
   }
 
-  /// تعيين كافة الإشعارات كمقروءة
+  /// تعيين كافة الإشعارات كمقروءة وحفظها سحابياً ومحلياً
   static Future<void> markAllAsRead() async {
     List<NotificationItem> items = getAllActiveNotifications();
     if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
-      AppData.storage['read_notifications'] = [];
+      AppData.storage['read_notifications'] = <String>[];
     }
-    List readList = AppData.storage['read_notifications'] as List;
+    List readList = AppData.storage['read_notifications']!;
     for (var item in items) {
       if (!readList.contains(item.id)) {
         readList.add(item.id);
@@ -181,7 +192,7 @@ class NotificationService {
     CloudSyncService.syncToCloud(isAuto: true);
   }
 
-  /// عرض قائمة الإشعارات في النافذة المنسدلة للزر في أعلى البرنامج
+  /// عرض قائمة الإشعارات غير المقروءة فقط وتحديث القائمة فوراً عند الضغط
   static void showNotificationMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -192,8 +203,8 @@ class NotificationService {
       builder: (bottomSheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            List<NotificationItem> items = getAllActiveNotifications();
-            int unreadCount = items.where((i) => !i.isRead).length;
+            // جلب الإشعارات غير المقروءة فقط
+            List<NotificationItem> activeUnreadItems = getAllActiveNotifications(unreadOnly: true);
 
             return Directionality(
               textDirection: TextDirection.rtl,
@@ -211,28 +222,14 @@ class NotificationService {
                             const Icon(Icons.notifications, color: Colors.amber, size: 24),
                             const SizedBox(width: 8),
                             Text(
-                              'التنبيهات الإشعارية الحية (${items.length})',
+                              'التنبيهات الإشعارية الحية (${activeUnreadItems.length})',
                               style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                             ),
-                            if (unreadCount > 0) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.redAccent,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  '$unreadCount غير مقروء',
-                                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ]
                           ],
                         ),
                         Row(
                           children: [
-                            if (unreadCount > 0)
+                            if (activeUnreadItems.isNotEmpty)
                               TextButton(
                                 onPressed: () async {
                                   await markAllAsRead();
@@ -250,19 +247,19 @@ class NotificationService {
                     ),
                     const Divider(color: Colors.grey),
                     Expanded(
-                      child: items.isEmpty
+                      child: activeUnreadItems.isEmpty
                           ? const Center(
                               child: Text(
-                                'لا توجد تنبيهات حية حالياً',
+                                'لا توجد تنبيهات جديدة غير مقروءة حالياً',
                                 style: TextStyle(color: Colors.white54, fontSize: 14),
                               ),
                             )
                           : ListView.builder(
-                              itemCount: items.length,
+                              itemCount: activeUnreadItems.length,
                               itemBuilder: (context, index) {
-                                final item = items[index];
+                                final item = activeUnreadItems[index];
                                 return Card(
-                                  color: item.isRead ? const Color(0xFF222222) : const Color(0xFF2D2D2D),
+                                  color: const Color(0xFF2D2D2D),
                                   margin: const EdgeInsets.symmetric(vertical: 4),
                                   child: ListTile(
                                     onTap: () async {
@@ -276,15 +273,15 @@ class NotificationService {
                                     title: Text(
                                       item.title,
                                       style: TextStyle(
-                                        color: item.isRead ? Colors.white60 : item.color,
-                                        fontWeight: item.isRead ? FontWeight.normal : FontWeight.bold,
+                                        color: item.color,
+                                        fontWeight: FontWeight.bold,
                                         fontSize: 13,
                                       ),
                                     ),
                                     subtitle: Text(
                                       item.details,
-                                      style: TextStyle(
-                                        color: item.isRead ? Colors.white38 : Colors.white70,
+                                      style: const TextStyle(
+                                        color: Colors.white70,
                                         fontSize: 11,
                                       ),
                                     ),
@@ -294,8 +291,7 @@ class NotificationService {
                                       children: [
                                         Text(item.date, style: const TextStyle(color: Colors.grey, fontSize: 10)),
                                         const SizedBox(height: 4),
-                                        if (!item.isRead)
-                                          const Icon(Icons.circle, color: Colors.amber, size: 8),
+                                        const Icon(Icons.circle, color: Colors.amber, size: 8),
                                       ],
                                     ),
                                   ),

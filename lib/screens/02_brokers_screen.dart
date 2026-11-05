@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import '../app_data.dart';
+import '../app_storage_manager.dart';
 import '../services/local_storage_service.dart';
 import '../services/cloud_sync_service.dart';
+import '../services/security_manager.dart';
 import '01_clients_screen.dart';
 import '03_customer_requests_screen.dart';
 import '04_for_sale_screen.dart';
@@ -20,6 +22,8 @@ class BrokersScreen extends StatefulWidget {
 }
 
 class _BrokersScreenState extends State<BrokersScreen> {
+  bool _isLoading = false;
+
   final nameController = TextEditingController();
   final phone1Controller = TextEditingController();
   final phone2Controller = TextEditingController();
@@ -37,7 +41,39 @@ class _BrokersScreenState extends State<BrokersScreen> {
   final focusNotes = FocusNode();
 
   @override
+  void initState() {
+    super.initState();
+    _startRealtimeListener();
+  }
+
+  void _startRealtimeListener() async {
+    String currentEmail = AppStorageManager.currentEmail;
+    if (currentEmail.isEmpty) {
+      currentEmail = await LocalStorageService.getPersonalGmail();
+    }
+    
+    if (currentEmail.isNotEmpty) {
+      AppStorageManager.listenToMasterDatabase(
+        companyAdminEmail: currentEmail,
+        onDataUpdated: (updatedData) {
+          if (mounted) {
+            setState(() {
+              updatedData.forEach((key, value) {
+                if (value != null) {
+                  AppData.storage[key] = value;
+                }
+              });
+              _isLoading = false;
+            });
+          }
+        },
+      );
+    }
+  }
+
+  @override
   void dispose() {
+    AppStorageManager.stopMasterDatabaseListener();
     nameController.dispose();
     phone1Controller.dispose();
     phone2Controller.dispose();
@@ -111,6 +147,20 @@ class _BrokersScreenState extends State<BrokersScreen> {
     }
   }
 
+  void _syncDataToCloud() async {
+    String currentEmail = AppStorageManager.currentEmail;
+    if (currentEmail.isEmpty) {
+      currentEmail = await LocalStorageService.getPersonalGmail();
+    }
+    if (currentEmail.isNotEmpty) {
+      await AppStorageManager.syncMasterDatabase(
+        companyAdminEmail: currentEmail,
+        currentPhone: AppStorageManager.currentUsername,
+        appData: AppData.storage,
+      );
+    }
+  }
+
   void _saveBroker(BuildContext dialogContext) async {
     String p1 = phone1Controller.text.trim();
     String p2 = phone2Controller.text.trim();
@@ -139,10 +189,10 @@ class _BrokersScreenState extends State<BrokersScreen> {
     final dateStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
     setState(() {
-      if (!AppData.storage.containsKey('بيانات السماسرة')) {
+      if (!AppData.storage.containsKey('بيانات السماسرة') || AppData.storage['بيانات السماسرة'] == null) {
         AppData.storage['بيانات السماسرة'] = [];
       }
-      AppData.storage['بيانات السماسرة']!.add({
+      (AppData.storage['بيانات السماسرة'] as List).add({
         'إسم السمسار': nameController.text.trim().isEmpty ? '-' : nameController.text.trim(),
         'رقم التليفون 1': p1.isEmpty ? '-' : p1,
         'رقم التليفون 2': p2.isEmpty ? '-' : p2,
@@ -156,6 +206,7 @@ class _BrokersScreenState extends State<BrokersScreen> {
 
     await LocalStorageService.saveLocally();
     CloudSyncService.syncToCloud(isAuto: true);
+    _syncDataToCloud();
 
     Navigator.pop(dialogContext);
 
@@ -165,6 +216,8 @@ class _BrokersScreenState extends State<BrokersScreen> {
   }
 
   void _showAddBrokerDialog() {
+    if (!SecurityManager.checkActionPermission(context, actionName: 'إضافة سمسار')) return;
+
     nameController.clear();
     phone1Controller.clear();
     phone2Controller.clear();
@@ -296,9 +349,64 @@ class _BrokersScreenState extends State<BrokersScreen> {
     );
   }
 
+  Future<void> _deleteBrokerRecord(int index) async {
+    if (!SecurityManager.checkActionPermission(context, actionName: 'حذف سمسار')) return;
+
+    final rawList = AppData.storage['بيانات السماسرة'];
+    if (rawList is! List || index >= rawList.length) return;
+
+    bool confirm = await showDialog(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF2C2C2C),
+          title: const Text('تأكيد الحذف', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+          content: const Text('هل تريد حقاً نقل هذا السمسار إلى سلة المهملات؟', style: TextStyle(color: Colors.white)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء', style: TextStyle(color: Colors.grey))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('حذف ونقل للسلة', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    ) ?? false;
+
+    if (!confirm) return;
+
+    setState(() {
+      if (!AppData.storage.containsKey('trash_bin') || AppData.storage['trash_bin'] == null) {
+        AppData.storage['trash_bin'] = [];
+      }
+
+      final itemToDelete = rawList[index];
+      Map<String, dynamic> deletedItem = itemToDelete is Map ? Map<String, dynamic>.from(itemToDelete) : {};
+      final now = DateTime.now();
+      deletedItem['source_screen'] = 'بيانات السماسرة';
+      deletedItem['deleted_date'] = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+
+      (AppData.storage['trash_bin'] as List).add(deletedItem);
+      rawList.removeAt(index);
+    });
+
+    await LocalStorageService.saveLocally();
+    CloudSyncService.syncToCloud(isAuto: true);
+    _syncDataToCloud();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم نقل السمسار إلى سلة المهملات وتحديث السحابة بنجاح'), backgroundColor: Colors.orange),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final brokersList = AppData.storage['بيانات السماسرة'] ?? [];
+    final rawList = AppData.storage['بيانات السماسرة'];
+    final List brokersList = (rawList is List) ? rawList : [];
     final totalRows = brokersList.length < 15 ? 15 : brokersList.length;
 
     return Directionality(
@@ -475,97 +583,77 @@ class _BrokersScreenState extends State<BrokersScreen> {
                     borderRadius: BorderRadius.circular(4),
                     border: Border.all(color: Colors.teal.withOpacity(0.3)),
                   ),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      return SingleChildScrollView(
-                        scrollDirection: Axis.vertical,
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                            child: DataTable(
-                              headingRowColor: WidgetStateProperty.all(const Color(0xFF2C2C2C)),
-                              border: TableBorder.all(color: Colors.grey.shade800, width: 1),
-                              columnSpacing: 16,
-                              columns: const [
-                                DataColumn(label: Text('م', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.tealAccent))),
-                                DataColumn(label: Text('إسم السمسار', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                                DataColumn(label: Text('رقم التليفون 1', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                                DataColumn(label: Text('رقم التليفون 2', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                                DataColumn(label: Text('العنوان / المنطقة', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                                DataColumn(label: Text('التخصص العقاري', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                                DataColumn(label: Text('إسم المكتب', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                                DataColumn(label: Text('تاريخ التسجيل', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                                DataColumn(label: Text('ملاحظات عامة', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
-                                DataColumn(label: Text('حذف', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent))),
-                              ],
-                              rows: List.generate(totalRows, (index) {
-                                if (index < brokersList.length) {
-                                  Map<String, String> item = brokersList[index];
-                                  return DataRow(
-                                    color: WidgetStateProperty.resolveWith<Color?>((states) {
-                                      return index.isEven ? const Color(0xFF1E1E1E) : const Color(0xFF252525);
-                                    }),
-                                    cells: [
-                                      DataCell(Text('${index + 1}', style: const TextStyle(color: Colors.tealAccent))),
-                                      DataCell(Text(item['إسم السمسار'] ?? '', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
-                                      DataCell(Text(item['رقم التليفون 1'] ?? '', style: const TextStyle(color: Colors.white))),
-                                      DataCell(Text(item['رقم التليفون 2'] ?? '', style: const TextStyle(color: Colors.white))),
-                                      DataCell(Text(item['العنوان / المنطقة'] ?? '', style: const TextStyle(color: Colors.white))),
-                                      DataCell(Text(item['التخصص العقاري'] ?? '', style: const TextStyle(color: Colors.white))),
-                                      DataCell(Text(item['إسم المكتب'] ?? '', style: const TextStyle(color: Colors.white))),
-                                      DataCell(Text(item['تاريخ التسجيل'] ?? '', style: const TextStyle(color: Colors.white))),
-                                      DataCell(Text(item['ملاحظات عامة'] ?? '', style: const TextStyle(color: Colors.white70))),
-                                      DataCell(
-                                        IconButton(
-                                          icon: const Icon(Icons.delete_forever, color: Colors.redAccent, size: 20),
-                                          onPressed: () async {
-                                            setState(() {
-                                              // 1. التأكد من وجود سلة المهملات
-                                              if (!AppData.storage.containsKey('trash_bin') || AppData.storage['trash_bin'] == null) {
-                                                AppData.storage['trash_bin'] = <Map<String, String>>[];
-                                              }
-
-                                              // 2. إعداد السجل وإضافة اسم الشاشة وتاريخ الحذف
-                                              Map<String, String> deletedItem = Map<String, String>.from(brokersList[index]);
-                                              final now = DateTime.now();
-                                              deletedItem['source_screen'] = 'بيانات السماسرة';
-                                              deletedItem['deleted_date'] = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
-
-                                              // 3. النقل لسلة المهملات ثم المسح
-                                              (AppData.storage['trash_bin'] as List).add(deletedItem);
-                                              brokersList.removeAt(index);
-                                            });
-
-                                            // 4. حفظ وتزامن تلقائي
-                                            await LocalStorageService.saveLocally();
-                                            CloudSyncService.syncToCloud(isAuto: true);
-
-                                            if (mounted) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(content: Text('تم نقل السمسار إلى سلة المهملات وتحديث السحابة بنجاح'), backgroundColor: Colors.orange),
-                                              );
-                                            }
-                                          },
-                                        ),
-                                      ),
+                  child: _isLoading
+                      ? const Center(
+                          child: CircularProgressIndicator(color: Colors.tealAccent),
+                        )
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            return SingleChildScrollView(
+                              scrollDirection: Axis.vertical,
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                                  child: DataTable(
+                                    headingRowColor: WidgetStateProperty.all(const Color(0xFF2C2C2C)),
+                                    border: TableBorder.all(color: Colors.grey.shade800, width: 1),
+                                    columnSpacing: 16,
+                                    columns: const [
+                                      DataColumn(label: Text('م', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.tealAccent))),
+                                      DataColumn(label: Text('إسم السمسار', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
+                                      DataColumn(label: Text('رقم التليفون 1', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
+                                      DataColumn(label: Text('رقم التليفون 2', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
+                                      DataColumn(label: Text('العنوان / المنطقة', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
+                                      DataColumn(label: Text('التخصص العقاري', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
+                                      DataColumn(label: Text('إسم المكتب', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
+                                      DataColumn(label: Text('تاريخ التسجيل', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
+                                      DataColumn(label: Text('ملاحظات عامة', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
+                                      DataColumn(label: Text('حذف', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent))),
                                     ],
-                                  );
-                                } else {
-                                  return DataRow(
-                                    color: WidgetStateProperty.resolveWith<Color?>((states) {
-                                      return index.isEven ? const Color(0xFF1E1E1E) : const Color(0xFF252525);
+                                    rows: List.generate(totalRows, (index) {
+                                      if (index < brokersList.length) {
+                                        final rawItem = brokersList[index];
+                                        final Map<String, dynamic> item = rawItem is Map ? Map<String, dynamic>.from(rawItem) : {};
+
+                                        return DataRow(
+                                          color: WidgetStateProperty.resolveWith<Color?>((states) {
+                                            return index.isEven ? const Color(0xFF1E1E1E) : const Color(0xFF252525);
+                                          }),
+                                          cells: [
+                                            DataCell(Text('${index + 1}', style: const TextStyle(color: Colors.tealAccent))),
+                                            DataCell(Text(item['إسم السمسار']?.toString() ?? '-', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                                            DataCell(Text(item['رقم التليفون 1']?.toString() ?? '-', style: const TextStyle(color: Colors.white))),
+                                            DataCell(Text(item['رقم التليفون 2']?.toString() ?? '-', style: const TextStyle(color: Colors.white))),
+                                            DataCell(Text(item['العنوان / المنطقة']?.toString() ?? '-', style: const TextStyle(color: Colors.white))),
+                                            DataCell(Text(item['التخصص العقاري']?.toString() ?? '-', style: const TextStyle(color: Colors.white))),
+                                            DataCell(Text(item['إسم المكتب']?.toString() ?? '-', style: const TextStyle(color: Colors.white))),
+                                            DataCell(Text(item['تاريخ التسجيل']?.toString() ?? '-', style: const TextStyle(color: Colors.white))),
+                                            DataCell(Text(item['ملاحظات عامة']?.toString() ?? '-', style: const TextStyle(color: Colors.white70))),
+                                            DataCell(
+                                              IconButton(
+                                                icon: const Icon(Icons.delete_forever, color: Colors.redAccent, size: 20),
+                                                tooltip: 'حذف السمسار',
+                                                onPressed: () => _deleteBrokerRecord(index),
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      } else {
+                                        return DataRow(
+                                          color: WidgetStateProperty.resolveWith<Color?>((states) {
+                                            return index.isEven ? const Color(0xFF1E1E1E) : const Color(0xFF252525);
+                                          }),
+                                          cells: List.generate(10, (cellIndex) => const DataCell(SizedBox.shrink())),
+                                        );
+                                      }
                                     }),
-                                    cells: List.generate(10, (cellIndex) => const DataCell(SizedBox.shrink())),
-                                  );
-                                }
-                              }),
-                            ),
-                          ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                      );
-                    },
-                  ),
                 ),
               ),
             ),

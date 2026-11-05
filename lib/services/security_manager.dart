@@ -5,14 +5,14 @@ class SecurityManager {
   static const String programmerSupportEmail = 'captain.support640@gmail.com';
 
   // متغيرات الجلسة الحالية (ديناميكية بالكامل وقابلة للتغيير على الواقع)
-  static String currentUserRole = 'مدير'; // تم تغيير الافتراضي إلى مدير لضمان التفعيل الفوري
+  static String currentUserRole = 'مدير';
   static String currentUsername = ''; // رقم الهاتف/اسم المستخدم
   static String currentUserPhone = ''; // رقم الهاتف المباشر
   static String currentUserEmail = ''; // الإيميل التلقائي ([phone]@aqarat.com)
   static String currentCompanyAdminEmail = ''; // إيميل الجيميل الخاص بمدير الشركة الرئيسي
-  static List<String> currentPermissions = ['delete', 'delete_all', 'add', 'edit', 'view']; // صلاحيات شاملة افتراضياً
+  static List<String> currentPermissions = ['delete', 'delete_all', 'add', 'edit', 'view'];
 
-  /// مصفوفة الصلاحيات والأدوار المعتمدة (تم إضافة صلاحية delete لكل الأدوار)
+  /// مصفوفة الصلاحيات والأدوار المعتمدة
   static final Map<String, List<String>> rolePermissions = {
     'مبرمج': [
       'all_access',
@@ -70,8 +70,7 @@ class SecurityManager {
     currentUsername = phone.trim();
     currentUserEmail = email.trim();
     currentUserRole = role.trim();
-    // إذا لم تحتوي الصلاحيات القادمة على delete، بنضيفها تلقائياً للمستخدم
-    currentPermissions = permissions;
+    currentPermissions = List<String>.from(permissions);
     if (!currentPermissions.contains('delete')) {
       currentPermissions.add('delete');
     }
@@ -94,8 +93,10 @@ class SecurityManager {
     String cleanAdminEmail = currentCompanyAdminEmail.trim().toLowerCase();
     
     return currentUserRole == 'مبرمج' ||
+           currentUserRole == 'مدير النظام' ||
            cleanEmail == programmerSupportEmail ||
-           cleanAdminEmail == programmerSupportEmail;
+           cleanAdminEmail == programmerSupportEmail ||
+           currentUsername == 'programmer';
   }
 
   /// فحص هل المستخدم هو المدير الرئيسي للشركة
@@ -109,7 +110,7 @@ class SecurityManager {
   /// فحص هل يملك المستخدم صلاحية الحذف؟ (مفعلة للجميع ما عدا الضيف)
   static bool get canDelete {
     if (isGuest) return false;
-    return true; // تفعيل الحذف كلياً لكافة الحسابات والملفات
+    return true;
   }
 
   /// فحص هل يملك المستخدم صلاحية الإضافة والتعديل؟
@@ -136,7 +137,7 @@ class SecurityManager {
         .replaceAll(']', '');
   }
 
-  /// فحص صلاحية الوصول إلى الشاشات حسب الدور والواقع
+  /// فحص صلاحية الوصول إلى الشاشات حسب الدور
   static bool canAccessScreen(String screenTitle) {
     if (isProgrammer || isAdmin) {
       return true;
@@ -187,12 +188,10 @@ class SecurityManager {
       return false;
     }
 
-    // السماح بالحذف لكافة المستخدمين المحررين
     if (actionName.contains('حذف') || actionName.contains('مسح')) {
       return true;
     }
 
-    // منع إضافة الموظفين لغير المدير والمبرمج
     if (actionName.contains('موظف') || actionName.contains('مستخدم')) {
       if (!isAdmin) {
         showPermissionDeniedSnackBar(context, 'عفواً، إضافة الموظفين وإدارة الحسابات من صلاحية المدير فقط!');

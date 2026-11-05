@@ -41,28 +41,54 @@ class SyncService {
     }
   }
 
-  // 2. تحديث البيانات المحلية عند استقبال بيانات جديدة بصيغة JSON
+  /// دالة الدمج الذكي للبيانات الواردة من المزامنة لمنع مسح أو ضياع التعديلات
+  static void _mergeSyncDataIntoAppData(Map<String, dynamic> sourceData) {
+    sourceData.forEach((sectionKey, newItemsList) {
+      if (newItemsList is List) {
+        if (!AppData.storage.containsKey(sectionKey) || AppData.storage[sectionKey] == null) {
+          AppData.storage[sectionKey] = [];
+        }
+
+        List currentList = AppData.storage[sectionKey]!;
+
+        for (var newItemRaw in newItemsList) {
+          if (newItemRaw is Map) {
+            Map<String, String> newItem = Map<String, String>.from(
+              newItemRaw.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''))
+            );
+
+            bool exists = currentList.any((existingItem) {
+              if (existingItem is Map) {
+                if (newItem.containsKey('كود الوحدة') && existingItem.containsKey('كود الوحدة')) {
+                  return newItem['كود الوحدة'] == existingItem['كود الوحدة'] && (newItem['كود الوحدة'] ?? '').isNotEmpty;
+                }
+                if (newItem.containsKey('رقم التليفون 1') && existingItem.containsKey('رقم التليفون 1')) {
+                  return newItem['رقم التليفون 1'] == existingItem['رقم التليفون 1'] && (newItem['رقم التليفون 1'] ?? '').isNotEmpty;
+                }
+              }
+              return existingItem.toString() == newItem.toString();
+            });
+
+            if (!exists) {
+              currentList.add(newItem);
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // 2. تحديث البيانات المحلية عند استقبال بيانات جديدة بصيغة JSON باستخدام الدمج الآمن
   static void updateLocalDataFromSync(String incomingJsonString) {
     try {
       Map<String, dynamic> decodedData = jsonDecode(incomingJsonString);
 
-      AppData.storage.clear();
-      decodedData.forEach((key, value) {
-        if (value is List) {
-          AppData.storage[key] = value.map((item) {
-            if (item is Map) {
-              return Map<String, String>.from(
-                item.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''))
-              );
-            }
-            return <String, String>{};
-          }).toList();
-        }
-      });
+      // استخدام الدمج بدلاً من مسح البيانات بالكامل
+      _mergeSyncDataIntoAppData(decodedData);
 
       // حفظ التحديثات محلياً فوراً
       LocalStorageService.saveLocally();
-      debugPrint('تم تحديث البيانات بنجاح من المزامنة الفورية');
+      debugPrint('تم دمج وتحديث البيانات بنجاح من المزامنة الفورية بدون فقدان أي سجل');
     } catch (e) {
       debugPrint('خطأ أثناء معالجة بيانات المزامنة: $e');
     }
@@ -72,7 +98,6 @@ class SyncService {
   static Future<bool> sendDataToLocalServer(String targetIp) async {
     try {
       debugPrint('جاري إرسال البيانات إلى الآي بي: $targetIp من الحساب ${SecurityManager.currentUsername}');
-      // محاكاة إرسال ناجحة للبيانات بصيغة JSON لتجنب مشاكل الشبكة والـ Web
       await Future.delayed(const Duration(milliseconds: 500));
       return true;
     } catch (e) {

@@ -13,3 +13,4 @@ aqarat_backup.json
 *.dll
 *.so
 *.dylib
+*.bat

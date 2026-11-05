@@ -88,15 +88,22 @@ Widget buildDynamicTable({
 
                                       // 1. نقل لسلة المهملات والحذف من ذاكرة الجدول فوراً
                                       TrashBinManager.moveToTrash(screenName, itemToDelete);
+                                      
+                                      // 2. تسجيل إشعار بحذف السجل
+                                      TrashBinManager.addRealNotification(
+                                        'حذف سجل', 
+                                        'قام ${SecurityManager.currentUsername} بحذف سجل من ($screenName)'
+                                      );
+
                                       AppData.storage[screenName]?.removeAt(index);
                                       
-                                      // 2. إعادة رسم الواجهة فوراً لتحديث السطور
+                                      // 3. إعادة رسم الواجهة فوراً لتحديث السطور
                                       onRefresh?.call();
 
-                                      // 3. الحفظ المحلي السريع على الجهاز
+                                      // 4. الحفظ المحلي السريع على الجهاز
                                       await LocalStorageService.saveLocally();
 
-                                      // 4. المزامنة السحابية في الخلفية تماماً لمنع الشاشة البيضاء والتهنيج
+                                      // 5. المزامنة السحابية في الخلفية تماماً لمنع الشاشة البيضاء والتهنيج
                                       unawaited(CloudSyncService.syncToCloud(isAuto: true));
 
                                       if (context.mounted) {
@@ -165,6 +172,12 @@ void showFormDialog(BuildContext context, String screenTitle, List<String> field
       AppData.storage[screenTitle] = [];
     }
     AppData.storage[screenTitle]!.add(newRow);
+
+    // تسجيل إشعار إضافة بيانات جديدة
+    TrashBinManager.addRealNotification(
+      'إضافة بيانات جديدة',
+      'قام ${SecurityManager.currentUsername} بإضافة سجل جديد في ($screenTitle)'
+    );
 
     // الحفظ المحلي السريع
     await LocalStorageService.saveLocally();
@@ -269,7 +282,7 @@ void showFormDialog(BuildContext context, String screenTitle, List<String> field
   );
 }
 
-// --- دالة سلة المهملات الآمنة ومجمد الإشعارات ---
+// --- دالة سلة المهملات الآمنة وإدارة الإشعارات ---
 class TrashBinManager {
   static void moveToTrash(String screenName, Map<String, String> itemData) {
     if (!AppData.storage.containsKey('trash_bin') || AppData.storage['trash_bin'] == null) {

@@ -88,24 +88,22 @@ class LocalStorageService {
   static Future<void> logout() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      // فقط نقوم بتغيير حالة تسجيل الدخول إلى false دون مسح بيانات الحساب واسم المستخدم
       await prefs.setBool(_isLoggedInKey, false);
-      await prefs.setString(_companyEmailKey, '');
-      await prefs.setString(_personalGmailKey, '');
-      await prefs.remove(_companyEmailKey);
-      await prefs.remove(_personalGmailKey);
+      
+      // تم تعليق أو حذف أوامر الحتى والمسح (remove/clear) لضمان بقاء اسم المستخدم وكلمة السر محفوظة دائماً
+      debugPrint('تم تسجيل الخروج بنجاح مع الاحتفاظ ببيانات الحساب محلية وآمنة.');
     } catch (e) {
       debugPrint('خطأ تسجيل الخروج: $e');
     }
   }
 
-  /// فحص صلاحية الـ Master Admin بناءً على رقمي الموبايل والإيميلات الاستثنائية
   static bool isMasterAdmin(String email) {
     const String masterAdminEmail = 'admin@aqarat.com';
     const String programmerEmail = 'captain.support640@gmail.com';
     String lowerEmail = email.trim().toLowerCase();
     
     String currentUsername = SecurityManager.currentUsername.trim();
-    
     bool isMasterPhone = (currentUsername == '01200626469' || currentUsername == '01004026247');
 
     return isMasterPhone || lowerEmail == masterAdminEmail.toLowerCase() || lowerEmail == programmerEmail.toLowerCase();
@@ -143,13 +141,49 @@ class LocalStorageService {
     return {};
   }
 
+  /// دالة الدمج الذكي لمنع ضياع أو مسح التعديلات الجديدة
+  static void _mergeDataIntoAppData(Map<String, dynamic> sourceData) {
+    sourceData.forEach((sectionKey, newItemsList) {
+      if (newItemsList is List) {
+        if (!AppData.storage.containsKey(sectionKey) || AppData.storage[sectionKey] == null) {
+          AppData.storage[sectionKey] = [];
+        }
+
+        List currentList = AppData.storage[sectionKey]!;
+
+        for (var newItemRaw in newItemsList) {
+          if (newItemRaw is Map) {
+            Map<String, String> newItem = Map<String, String>.from(
+              newItemRaw.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''))
+            );
+
+            bool exists = currentList.any((existingItem) {
+              if (existingItem is Map) {
+                if (newItem.containsKey('كود الوحدة') && existingItem.containsKey('كود الوحدة')) {
+                  return newItem['كود الوحدة'] == existingItem['كود الوحدة'] && (newItem['كود الوحدة'] ?? '').isNotEmpty;
+                }
+                if (newItem.containsKey('رقم التليفون 1') && existingItem.containsKey('رقم التليفون 1')) {
+                  return newItem['رقم التليفون 1'] == existingItem['رقم التليفون 1'] && (newItem['رقم التليفون 1'] ?? '').isNotEmpty;
+                }
+              }
+              return existingItem.toString() == newItem.toString();
+            });
+
+            if (!exists) {
+              currentList.add(newItem);
+            }
+          }
+        }
+      }
+    });
+  }
+
   static Future<bool> saveLocally() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       String storageKey = await _getStorageKey();
       String jsonString = jsonEncode(AppData.storage);
       await prefs.setString(storageKey, jsonString);
-
       await prefs.setString('local_app_data_fallback_master', jsonString);
       return true;
     } catch (e) {
@@ -181,21 +215,7 @@ class LocalStorageService {
 
       if (jsonString != null && jsonString.isNotEmpty) {
         Map<String, dynamic> decodedData = jsonDecode(jsonString);
-
-        AppData.storage.clear();
-        decodedData.forEach((key, value) {
-          if (value is List) {
-            AppData.storage[key] = value.map((item) {
-              if (item is Map) {
-                return Map<String, String>.from(
-                  item.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''))
-                );
-              }
-              return <String, String>{};
-            }).toList();
-          }
-        });
-
+        _mergeDataIntoAppData(decodedData); // استخدام الدمج الذكي بدل الـ Clear المدمر
         await saveLocally();
         return true;
       }
@@ -224,10 +244,6 @@ class LocalStorageService {
     }
   }
 
-  // ==========================================================
-  //  مسار موحد ومحدث للحفظ والاسترجاع الآمن
-  // ==========================================================
-
   static Future<Directory> _getUnifiedDocumentsFolder() async {
     Directory? folder;
     try {
@@ -237,7 +253,7 @@ class LocalStorageService {
           folder = await getExternalStorageDirectory();
         }
       } else {
-        folder = await getApplicationDocumentsDirectory();
+        folder = await getApplicationSupportDirectory(); // تم ضبطه لدعم الديسك توب بشكل آمن بعيداً عن الصلاحيات
       }
 
       final Directory backupFolder = Directory('${folder!.path}/Aqarat_Backups');
@@ -246,7 +262,7 @@ class LocalStorageService {
       }
       return backupFolder;
     } catch (e) {
-      Directory docs = await getApplicationDocumentsDirectory();
+      Directory docs = await getApplicationSupportDirectory();
       final Directory backupFolder = Directory('${docs.path}/Aqarat_Backups');
       if (!await backupFolder.exists()) {
         await backupFolder.create(recursive: true);
@@ -263,8 +279,6 @@ class LocalStorageService {
       String jsonString = jsonEncode(AppData.storage);
       File file = File(filePath);
       await file.writeAsString(jsonString);
-
-      debugPrint('تم الحفظ بنجاح في المسار الموحد: $filePath');
       return filePath;
     } catch (e) {
       debugPrint('خطأ الحفظ في Documents: $e');
@@ -281,21 +295,7 @@ class LocalStorageService {
       if (await file.exists()) {
         String jsonString = await file.readAsString();
         Map<String, dynamic> decodedData = jsonDecode(jsonString);
-
-        AppData.storage.clear();
-        decodedData.forEach((key, value) {
-          if (value is List) {
-            AppData.storage[key] = value.map((item) {
-              if (item is Map) {
-                return Map<String, String>.from(
-                  item.map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')),
-                );
-              }
-              return <String, String>{};
-            }).toList();
-          }
-        });
-
+        _mergeDataIntoAppData(decodedData); // دمج آمن
         await saveLocally();
         return true;
       }

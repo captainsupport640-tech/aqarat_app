@@ -7,6 +7,7 @@ import '../services/local_storage_service.dart';
 import '../services/security_manager.dart';
 import '../services/licensing_service.dart';
 import '../app_storage_manager.dart';
+import '../app_data.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,7 +21,7 @@ class LoginScreen extends StatefulWidget {
       'license': 'مدى الحياة',
       'question': 'ما هي مدينة ميلادك؟',
       'answer': 'القاهرة',
-      'email': 'admin@aqarat.com',
+      'email': '01200626469@aqarat.com',
       'personalGmail': 'captain.support640@gmail.com',
     },
     '01004026247': {
@@ -31,7 +32,7 @@ class LoginScreen extends StatefulWidget {
       'license': 'مدى الحياة',
       'question': 'ما هي مدينة ميلادك؟',
       'answer': 'القاهرة',
-      'email': 'captain.support640@gmail.com',
+      'email': '01004026247@aqarat.com',
       'personalGmail': 'captain.support640@gmail.com',
     },
   };
@@ -48,7 +49,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _showPassword = false;
-  bool _rememberMe = false;
+  bool _rememberMe = true; // تفعيل الحفظ تلقائياً لعدم مسح البيانات عند الخروج
 
   final FocusNode _gmailFocus = FocusNode();
   final FocusNode _usernameFocus = FocusNode();
@@ -77,12 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
     'مبرمج',
   ];
 
-  bool _isValidEmail(String email) {
-    final RegExp emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    return emailRegex.hasMatch(email.trim());
-  }
-
-  // دالة التحقق من صحة رقم التليفون (11 رقم) وبدايته بالشبكات المتاحة
+  // دالة التحقق من صحة رقم التليفون (11 رقم)
   bool _isValidEgyptianPhone(String phone) {
     if (phone.length != 11 || !RegExp(r'^[0-9]+$').hasMatch(phone)) {
       return false;
@@ -123,27 +119,18 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    bool remember = prefs.getBool('remember_me') ?? false;
+    // تحميل بيانات التذكر دون مسحها إطلاقاً
+    String savedGmail = prefs.getString('saved_gmail') ?? '';
+    String savedUsername = prefs.getString('saved_username') ?? '';
+    String savedPassword = prefs.getString('saved_password') ?? '';
+    bool remember = prefs.getBool('remember_me') ?? true;
 
-    if (remember) {
-      String savedGmail = prefs.getString('saved_gmail') ?? '';
-      String savedUsername = prefs.getString('saved_username') ?? '';
-      String savedPassword = prefs.getString('saved_password') ?? '';
-
-      setState(() {
-        _rememberMe = remember;
-        _gmailController.text = savedGmail;
-        _usernameController.text = savedUsername;
-        _passwordController.text = savedPassword;
-      });
-    } else {
-      setState(() {
-        _rememberMe = false;
-        _gmailController.clear();
-        _usernameController.clear();
-        _passwordController.clear();
-      });
-    }
+    setState(() {
+      _rememberMe = remember;
+      _gmailController.text = savedGmail;
+      _usernameController.text = savedUsername;
+      _passwordController.text = savedPassword;
+    });
   }
 
   void _login() async {
@@ -154,14 +141,13 @@ class _LoginScreenState extends State<LoginScreen> {
     if (username.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('الرجاء إدخال اسم المستخدم وكلمة السر بدقة!'),
+          content: Text('الرجاء إدخال اسم المستخدم (رقم الموبايل) وكلمة السر بدقة!'),
           backgroundColor: Colors.orange,
         ),
       );
       return;
     }
 
-    // التحقق من شرط 11 رقم للشبكات 010, 011, 012, 015, 040
     if (!_isValidEgyptianPhone(username)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -172,31 +158,35 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    // توليد الإيميل أوتوماتيكياً بالدومين الموحد @aqarat.com
+    String unifiedEmail = "$username@aqarat.com";
+
     bool isValidUser = false;
     bool isMasterOrProgrammer = false;
     String userRole = 'مدير';
     String firstName = 'المدير';
-    String adminGmail = gmail;
+    String adminGmail = gmail.isNotEmpty ? gmail : 'captain.support640@gmail.com';
 
-    // 1. التحقق الاستثنائي للأدمن والمبرمج الرئيسي
+    // 1. التحقق للأدمن والمبرمج الرئيسي
     if ((username == '01200626469' || username == '01004026247') && password == '1983') {
       isValidUser = true;
       isMasterOrProgrammer = true;
       userRole = username == '01004026247' ? 'مبرمج' : 'مدير';
       firstName = username == '01200626469' ? 'الكابتن عبد الجواد' : 'المبرمج الرئيسي';
+      adminGmail = 'captain.support640@gmail.com';
     } else {
-      // 2. فحص الخريطة المحلية أولاً للاستجابة السريعة
+      // 2. الفحص في الخريطة المحلية برقم الموبايل
       if (LoginScreen.appUsers.containsKey(username)) {
         final userData = LoginScreen.appUsers[username]!;
         if ((userData['password'] ?? '').toString().trim() == password) {
           isValidUser = true;
           userRole = userData['role'] ?? 'مدخل بيانات';
           firstName = userData['firstName'] ?? 'موظف';
-          adminGmail = userData['personalGmail'] ?? gmail;
+          adminGmail = userData['personalGmail'] ?? adminGmail;
         }
       }
 
-      // 3. الفحص أونلاين في شجرة المستخدمين السحابية
+      // 3. الفحص أونلاين في شجرة المستخدمين السحابية برقم الموبايل
       if (!isValidUser) {
         try {
           DatabaseEvent event = await FirebaseDatabase.instance.ref().child('companies_storage').once();
@@ -215,7 +205,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   firstName = userData['firstName'] ?? 'موظف';
                   adminGmail = companyKey.toString().replaceAll('_at_', '@').replaceAll('_', '.');
                   
-                  // حفظ محلي لتسهيل الدخول القادم
                   LoginScreen.appUsers[username] = {
                     'company': LoginScreen.mainCompanyName,
                     'firstName': firstName,
@@ -224,7 +213,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     'license': 'ساري',
                     'question': '',
                     'answer': '',
-                    'email': "$username@aqarat.com",
+                    'email': unifiedEmail,
                     'personalGmail': adminGmail,
                   };
                   await LocalStorageService.saveAppUsers(LoginScreen.appUsers);
@@ -234,24 +223,18 @@ class _LoginScreenState extends State<LoginScreen> {
             }
           }
         } catch (e) {
-          debugPrint("خطأ في الاتصال بقاعدة البيانات أونلاين: $e");
+          debugPrint("تنبيه الاتصال بالمظومة السحابية (يعمل التسجيل المحلي): $e");
         }
       }
     }
 
     if (isValidUser) {
-      if (adminGmail.isEmpty) {
-        adminGmail = LoginScreen.appUsers[username]?['personalGmail'] ?? 
-                await LocalStorageService.getPersonalGmail();
-        if (adminGmail.isEmpty) adminGmail = 'admin@aqarat.com';
-      }
-
       List<String> permissions = SecurityManager.rolePermissions[userRole] ?? 
           SecurityManager.rolePermissions['مدخل بيانات']!;
 
       await SecurityManager.saveSession(
         phone: username,
-        email: "$username@aqarat.com",
+        email: unifiedEmail,
         role: userRole,
         permissions: permissions,
         adminGmail: adminGmail,
@@ -279,7 +262,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('خطأ: اسم المستخدم أو كلمة السر غير صحيحة!'),
+          content: Text('خطأ: رقم الموبايل أو كلمة السر غير صحيحة!'),
           backgroundColor: Colors.red,
         ),
       );
@@ -305,19 +288,21 @@ class _LoginScreenState extends State<LoginScreen> {
       await LocalStorageService.savePersonalGmail(gmail);
     }
 
-    if (_rememberMe && !isGuest) {
-      await prefs.setBool('remember_me', true);
+    // حفظ حالة الدخول واسم المستخدم وكلمة السر دائماً لعدم مسحها عند الخروج
+    await prefs.setBool('remember_me', true);
+    if (!isGuest) {
       await prefs.setString('saved_gmail', gmail);
       await prefs.setString('saved_username', username);
       await prefs.setString('saved_password', _passwordController.text.trim());
-    } else {
-      await prefs.setBool('remember_me', false);
-      await prefs.remove('saved_gmail');
-      await prefs.remove('saved_username');
-      await prefs.remove('saved_password');
     }
 
     String fName = isGuest ? 'زائر (تصفح فقط)' : (LoginScreen.appUsers[username]?['firstName'] ?? 'المدير');
+
+    // إضافة إشعار تسجيل الدخول للمنظومة المركزية
+    TrashBinManager.addRealNotification(
+  'تسجيل دخول جديد',
+  'تم دخول $fName بصلاحية (${SecurityManager.currentUserRole}) بنجاح.',
+  );
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -363,19 +348,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         controller: _companyEmailController,
                         style: const TextStyle(color: Colors.cyanAccent),
                         keyboardType: TextInputType.emailAddress,
-                        onChanged: (emailVal) {
-                          if (emailVal.contains('@') && _newFirstNameController.text.isEmpty) {
-                            String extractedName = emailVal.split('@').first;
-                            extractedName = extractedName.replaceAll(RegExp(r'[0-9._-]'), ' ').trim();
-                            if (extractedName.isNotEmpty) {
-                              setDialogState(() {
-                                _newFirstNameController.text = extractedName;
-                              });
-                            }
-                          }
-                        },
                         decoration: const InputDecoration(
-                          labelText: 'إدخال الجيميل لمدير الشركة الرئيسي',
+                          labelText: 'إدخال الجيميل لمدير الشركة الرئيسي (اختياري)',
                           labelStyle: TextStyle(color: Colors.cyanAccent),
                           prefixIcon: Icon(Icons.mark_email_read, color: Colors.cyanAccent),
                         ),
@@ -484,7 +458,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       String pass = _newPasswordController.text.trim();
                       String ans = _securityAnswerController.text.trim();
 
-                      if (rawEmail.isEmpty || comp.isEmpty || phoneUser.isEmpty || pass.isEmpty || fName.isEmpty || ans.isEmpty) {
+                      if (comp.isEmpty || phoneUser.isEmpty || pass.isEmpty || fName.isEmpty || ans.isEmpty) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('الرجاء إكمال جميع البيانات وسؤال الأمان!'), backgroundColor: Colors.orange),
                         );
@@ -498,24 +472,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         return;
                       }
 
-                      if (!_isValidEmail(rawEmail)) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('الرجاء إدخال إيميل صحيح بفرومات مكتملة!'), backgroundColor: Colors.orange),
-                        );
-                        return;
-                      }
+                      String companyAdminGmail = rawEmail.isNotEmpty ? rawEmail : 'captain.support640@gmail.com';
 
-                      // التسجيل السحابي الحقيقي في 2_employees_tree
                       await AppStorageManager.registerEmployeeInTree(
-                              companyAdminEmail: rawEmail,
-                              employeePhone: phoneUser,
-                              employeeName: comp.isNotEmpty ? comp : 'مسؤول الشركة',
-                              password: pass,
-                              role: selectedUserRole,
-                            );
+                        companyAdminEmail: companyAdminGmail,
+                        employeePhone: phoneUser,
+                        employeeName: fName,
+                        password: pass,
+                        role: selectedUserRole,
+                      );
 
-                      await LocalStorageService.loginWithEmail(rawEmail);
-                      await LocalStorageService.savePersonalGmail(rawEmail);
+                      String autoEmail = "$phoneUser@aqarat.com";
 
                       LoginScreen.mainCompanyName = comp;
                       LoginScreen.appUsers[phoneUser] = {
@@ -526,14 +493,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         'license': 'فترة تجريبية 30 يوم',
                         'question': selectedSecurityQuestion,
                         'answer': ans,
-                        'email': "$phoneUser@aqarat.com",
-                        'personalGmail': rawEmail,
+                        'email': autoEmail,
+                        'personalGmail': companyAdminGmail,
                       };
 
                       await LocalStorageService.saveAppUsers(LoginScreen.appUsers);
 
                       setState(() {
-                        _gmailController.text = rawEmail;
                         _usernameController.text = phoneUser;
                         _passwordController.text = pass;
                         _rememberMe = true;
@@ -541,7 +507,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('تم تسجيل حساب المستخدم وإضافته بنجاح!'), backgroundColor: Colors.green),
+                        const SnackBar(content: Text('تم تسجيل حساب الموظف بالدومين الموحد بنجاح!'), backgroundColor: Colors.green),
                       );
                     },
                     child: const Text('حفظ وتسجيل', style: TextStyle(color: Colors.white)),
@@ -710,7 +676,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         keyboardType: TextInputType.emailAddress,
                         onSubmitted: (_) => FocusScope.of(context).requestFocus(_usernameFocus),
                         decoration: InputDecoration(
-                          labelText: 'إدخال الجيميل الخاص بتسجيل الدخول',
+                          labelText: 'الجيميل الرئيسي للشركة (اختياري للموظف)',
                           labelStyle: const TextStyle(color: Colors.cyanAccent),
                           filled: true,
                           fillColor: const Color(0xFF2C2C2C),
@@ -730,7 +696,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                         onSubmitted: (_) => FocusScope.of(context).requestFocus(_passwordFocus),
                         decoration: InputDecoration(
-                          labelText: 'اسم المستخدم (رقم التليفون - 11 رقم)',
+                          labelText: 'اسم المستخدم (رقم الموبايل - 11 رقم)',
                           labelStyle: const TextStyle(color: Colors.amber),
                           filled: true,
                           fillColor: const Color(0xFF2C2C2C),
@@ -765,9 +731,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             value: _rememberMe,
                             activeColor: Colors.amber,
                             checkColor: Colors.black,
-                            onChanged: (bool? value) => setState(() => _rememberMe = value ?? false),
+                            onChanged: (bool? value) => setState(() => _rememberMe = value ?? true),
                           ),
-                          const Text('حفظ حالة الدخول والربط', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                          const Text('حفظ حالة الدخول تلقائياً بالدومين الموحد', style: TextStyle(color: Colors.grey, fontSize: 13)),
                         ],
                       ),
                       const SizedBox(height: 16),

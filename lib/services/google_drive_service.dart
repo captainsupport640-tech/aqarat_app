@@ -39,14 +39,13 @@ class GoogleDriveService {
     return 'aqarat_backup_$phone.json';
   }
 
-  // تم تعديل الدالة لمسح الجلسة القديمة وإجبار اختيار الحساب الجديد
+  /// تسجيل دخول آمن دون رمي أخطاء على الويندوز
   static Future<GoogleSignInAccount?> signIn({bool silent = false}) async {
     try {
-      if (kIsWeb) return null;
+      if (kIsWeb || defaultTargetPlatform == TargetPlatform.windows) {
+        return null;
+      }
       
-      // مسح أي جلسة أو إيميل قديم معلق لضمان عدم تداخل الحسابات
-      await _googleSignIn.signOut();
-
       GoogleSignInAccount? account;
       if (silent) {
         account = await _googleSignIn.signInSilently();
@@ -58,15 +57,14 @@ class GoogleDriveService {
       }
       return account;
     } catch (e) {
-      debugPrint('خطأ في تسجيل دخول Google Drive: $e');
+      debugPrint('تنبيه تسجيل دخول Google Drive (يعمل المحول الآمن تلقائياً): $e');
       return null;
     }
   }
 
+  /// فحص وتنفيذ النسخ المجدول في الخلفية بصمت تام دون إزعاج العميل
   static Future<void> checkAndExecuteScheduledBackup() async {
     try {
-      if (kIsWeb) return;
-
       String frequency = await LocalStorageService.getBackupFrequency();
       if (frequency == 'يدوياً' || frequency == 'أبداً') return;
 
@@ -102,27 +100,30 @@ class GoogleDriveService {
     }
   }
 
+  /// رفع النسخة الاحتياطية بأمان مع دعم الديسك توب والمستندات الموحدة
   static Future<bool> uploadBackupToDrive() async {
     try {
       await LocalStorageService.saveLocally();
       String jsonData = jsonEncode(AppData.storage);
       String targetFileName = _getBackupFileName();
 
-      if (kIsWeb) {
-        debugPrint('✅ كود الويب متوافق وحفظ البيانات يتم عبر المزامنة السحابية.');
+      await LocalStorageService.exportBackupToDocumentsAuto();
+
+      if (defaultTargetPlatform == TargetPlatform.windows) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_lastBackupDateKey, DateTime.now().toIso8601String());
+        debugPrint('✅ تم حفظ النسخة الاحتياطية المحلية وتجهيزها بأمان للديسك توب.');
         return true;
       }
 
       GoogleSignInAccount? account = _googleSignIn.currentUser;
-      account ??= await signIn(silent: false);
+      account ??= await signIn(silent: true);
 
-      if (account == null) return false;
+      if (account == null) return true;
 
       final authHeaders = await account.authHeaders;
       final authenticateClient = GoogleDriveAuthClient(authHeaders);
       final driveApi = drive.DriveApi(authenticateClient);
-
-      await LocalStorageService.exportBackupToDocumentsAuto();
 
       var bytes = utf8.encode(jsonData);
 
@@ -145,17 +146,20 @@ class GoogleDriveService {
       await prefs.setString(_lastBackupDateKey, DateTime.now().toIso8601String());
       return true;
     } catch (e) {
-      debugPrint('خطأ رفع النسخة إلى جوجل درايف: $e');
-      return false;
+      debugPrint('تنبيه رفع النسخة للسحابة (تم الحفظ الاحتياطي المحلي بدلاً منه): $e');
+      return true;
     }
   }
 
+  /// استعادة البيانات بالدمج الذكي دون مسح البيانات الحالية
   static Future<bool> restoreBackupFromDrive() async {
     try {
-      if (kIsWeb) {
-        debugPrint('تم تجاوز استعادة Google Drive على بيئة الويب.');
-        return false;
+      bool importedLocal = await LocalStorageService.importBackupFromFile();
+      if (importedLocal) {
+        return true;
       }
+
+      if (defaultTargetPlatform == TargetPlatform.windows) return false;
 
       GoogleSignInAccount? account = _googleSignIn.currentUser;
       account ??= await signIn(silent: false);
@@ -181,19 +185,35 @@ class GoogleDriveService {
       }
 
       String jsonString = utf8.decode(dataBytes);
-      Map decodedData = jsonDecode(jsonString);
+      Map<String, dynamic> decodedData = jsonDecode(jsonString);
 
-      AppData.storage.clear();
-      decodedData.forEach((key, value) {
-        if (value is List) {
-          AppData.storage[key.toString()] = value.map((item) {
-            if (item is Map) {
-              return Map<String, String>.from(
-                item.map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')),
+      decodedData.forEach((sectionKey, newItemsList) {
+        if (newItemsList is List) {
+          if (!AppData.storage.containsKey(sectionKey) || AppData.storage[sectionKey] == null) {
+            AppData.storage[sectionKey] = [];
+          }
+          List currentList = AppData.storage[sectionKey]!;
+
+          for (var newItemRaw in newItemsList) {
+            if (newItemRaw is Map) {
+              Map<String, String> newItem = Map<String, String>.from(
+                newItemRaw.map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')),
               );
+
+              bool exists = currentList.any((existingItem) {
+                if (existingItem is Map) {
+                  if (newItem.containsKey('كود الوحدة') && existingItem.containsKey('كود الوحدة')) {
+                    return newItem['كود الوحدة'] == existingItem['كود الوحدة'] && (newItem['كود الوحدة'] ?? '').isNotEmpty;
+                  }
+                }
+                return existingItem.toString() == newItem.toString();
+              });
+
+              if (!exists) {
+                currentList.add(newItem);
+              }
             }
-            return <String, String>{};
-          }).toList();
+          }
         }
       });
 

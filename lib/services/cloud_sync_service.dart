@@ -7,11 +7,13 @@ import 'package:http/http.dart' as http;
 import '../app_data.dart';
 import 'local_storage_service.dart';
 import 'security_manager.dart';
+import 'google_drive_service.dart';
 
 class CloudSyncService {
 
   static const String _dbUrl = "https://aqarat-captain-default-rtdb.firebaseio.com";
   static StreamSubscription? _realtimeSubscription;
+  static Timer? _restPollingTimer;
 
   /// فحص هل البيئة تعمل برست API (على الويب أو على الويندوز لمنع خطأ MissingPluginException)
   static bool get _useRestApi => kIsWeb || defaultTargetPlatform == TargetPlatform.windows;
@@ -40,20 +42,27 @@ class CloudSyncService {
     return email.toLowerCase().replaceAll('.', '_').replaceAll('@', '_at_');
   }
 
-  /// 1️⃣ المزامنة التلقائية اللحظية عند حدوث أي تغيير في السحابة
+  /// 1️⃣ المزامنة التلقائية اللحظية "رايح جاي" عند حدوث أي تغيير في السحابة
   static Future<void> startAutoSyncListener(Function() onDataUpdated) async {
     try {
       _realtimeSubscription?.cancel();
+      _restPollingTimer?.cancel();
+
       String syncKey = await _getDualSyncKey();
 
       if (!_useRestApi) {
         DatabaseReference ref = FirebaseDatabase.instance.ref("companies_storage/$syncKey/1_master_database/data");
         _realtimeSubscription = ref.onValue.listen((event) async {
           if (event.snapshot.exists && event.snapshot.value != null) {
-            _updateLocalMemory(event.snapshot.value.toString());
+            _updateLocalMemorySmart(event.snapshot.value.toString());
             await LocalStorageService.saveLocally();
             onDataUpdated();
           }
+        });
+      } else {
+        // فحص دوري خفيف في الخلفية لنسخة الويندوز والويب لتنفيذ الاستماع اللحظي رايح جاي
+        _restPollingTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
+          await _fetchRemoteDataSilently(onUpdated: onDataUpdated);
         });
       }
     } catch (e) {
@@ -79,6 +88,11 @@ class CloudSyncService {
         'updated_by_phone': currentPhone,
         'email': companyEmail,
       };
+
+      // تنفيذ النسخ الاحتياطي المجدول حصرياً لمدير الشركة في الخلفية بصمت
+      if (SecurityManager.isAdmin) {
+        GoogleDriveService.checkAndExecuteScheduledBackup();
+      }
 
       // استخدام REST API على الويب وعلى الويندوز لمنع MissingPluginException
       if (_useRestApi) {
@@ -141,13 +155,13 @@ class CloudSyncService {
     await LocalStorageService.loadLocally();
 
     // ⚡ ثانياً: تحديث السحابة في الخلفية دون تعطيل الواجهة أو انتظار الاستجابة
-    unawaited(_fetchRemoteDataSilently());
+    _fetchRemoteDataSilently();
 
     return true;
   }
 
   /// دالة جلب البيانات من السحابة في الخلفية
-  static Future<void> _fetchRemoteDataSilently() async {
+  static Future<void> _fetchRemoteDataSilently({Function()? onUpdated}) async {
     try {
       String syncKey = await _getDualSyncKey();
       Map? rawData;
@@ -169,33 +183,50 @@ class CloudSyncService {
       }
 
       if (rawData != null && rawData.containsKey('data')) {
-        _updateLocalMemory(rawData['data'].toString());
-        await LocalStorageService.saveLocally();
-        debugPrint('✅ تم تحديث البيانات السحابية في الخلفية بنجاح.');
+        bool changed = _updateLocalMemorySmart(rawData['data'].toString());
+        if (changed) {
+          await LocalStorageService.saveLocally();
+          if (onUpdated != null) onUpdated();
+          debugPrint('✅ تم تحديث البيانات السحابية ومزامنتها لحظياً في الخلفية.');
+        }
       }
     } catch (e) {
       debugPrint('⚠️ المزامنة السحابية تعمل أوفلاين أو تعذرت في الخلفية: $e');
     }
   }
 
-  static void _updateLocalMemory(String rawJson) {
+ /// تحديث الذاكرة المحلية بالدمج الذكي المباشر دون أخطاء تنميط
+  static bool _updateLocalMemorySmart(String rawJson) {
     try {
       Map decodedData = jsonDecode(rawJson);
-      AppData.storage.clear();
+      bool hasChanges = false;
+
       decodedData.forEach((key, value) {
         if (value is List) {
-          AppData.storage[key] = (value).map((item) {
+          List tempNewList = [];
+          for (var item in value) {
             if (item is Map) {
-              return Map<String, String>.from(
-                item.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''))
-              );
+              Map<String, String> singleMap = {};
+              item.forEach((k, v) {
+                singleMap[k.toString()] = v?.toString() ?? '';
+              });
+              tempNewList.add(singleMap);
+            } else {
+              tempNewList.add(<String, String>{});
             }
-            return <String, String>{};
-          }).toList();
+          }
+
+          if (jsonEncode(AppData.storage[key]) != jsonEncode(tempNewList)) {
+            AppData.storage[key] = tempNewList;
+            hasChanges = true;
+          }
         }
       });
+
+      return hasChanges;
     } catch (e) {
       debugPrint('خطأ تحديث الذاكرة المحلية: $e');
+      return false;
     }
   }
 
