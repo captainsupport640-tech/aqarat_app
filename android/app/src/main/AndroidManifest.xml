@@ -1,82 +1,50 @@
-﻿import 'dart:io';
-import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
-import '../app_data.dart';
+﻿<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-class SecurityManager {
-  /// طلب كافة الصلاحيات المطلوبة للمنظومة (للأندرويد والكمبيوتر)
-  static Future<void> requestAllAppPermissions() async {
-    if (Platform.isAndroid) {
-      try {
-        // 1. طلب صلاحيات التخزين والإشعارات الأساسية
-        await [
-          Permission.storage,
-          Permission.notification,
-        ].request();
+    <!-- 1️⃣ صلاحية الظهور فوق التطبيقات الأخرى -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
-        // 2. طلب صلاحية إدارة الملفات الكاملة للأندرويد الحديث (Android 11+)
-        if (await Permission.manageExternalStorage.isDenied) {
-          await Permission.manageExternalStorage.request();
-        }
+    <!-- 2️⃣ صلاحيات التخزين وإدارة الملفات الكاملة -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
-        // 3. طلب صلاحية الظهور فوق التطبيقات الأخرى (SYSTEM_ALERT_WINDOW)
-        if (await Permission.systemAlertWindow.isDenied) {
-          await Permission.systemAlertWindow.request();
-        }
-      } catch (e) {
-        debugPrint('⚠️ خطأ أثناء طلب الصلاحيات على الأندرويد: $e');
-      }
-    } else if (Platform.isWindows) {
-      debugPrint('🖥️ التطبيق يعمل على نظام ويندوز، الصلاحيات مفعلة تلقائياً.');
-    }
-  }
+    <!-- 3️⃣ صلاحية الإشعارات والتنبيهات -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-  /// التحقق من صلاحية الوصول للأقسام الحساسة بحسب دور المستخدم
-  static bool canAccessSection(String sectionName) {
-    String role = AppData.userRole; // 'مدير' | 'مدخل بيانات' | 'ضيف'
+    <!-- 4️⃣ صلاحيات الإنترنت والشبكة المحلية -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
-    if (role == 'مدير') {
-      return true; // المدير يمتلك صلاحية كاملة
-    }
+    <application
+        android:label="aqarat_app"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:requestLegacyExternalStorage="true">
 
-    if (role == 'مدخل بيانات') {
-      // حظر الأقسام الحساسة عن مدخل البيانات
-      if (sectionName == 'الحسابات والخزينة' || 
-          sectionName == 'التقرير العام' || 
-          sectionName == 'الأرشيف') {
-        return false;
-      }
-      return true;
-    }
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
 
-    // للضيف أو أي دور آخر
-    return false;
-  }
-
-  /// عرض رسالة تنبيه عند محاولة دخول قسم غير مصرح به
-  static void showAccessDeniedDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF2D2D2D),
-        title: const Row(
-          children: [
-            Icon(Icons.lock, color: Colors.redAccent),
-            SizedBox(width: 8),
-            Text('صلاحيات غير كافية', style: TextStyle(color: Colors.white)),
-          ],
-        ),
-        content: const Text(
-          'عفواً، لا تملك الصلاحية الكافية لدخول هذا القسم. يرجى مراجعة مدير النظام.',
-          style: TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('موافق', style: TextStyle(color: Colors.amber)),
-          ),
-        ],
-      ),
-    );
-  }
-}
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+</manifest>
