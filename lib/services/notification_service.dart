@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../app_data.dart';
 import 'local_storage_service.dart';
 import 'cloud_sync_service.dart';
@@ -27,6 +29,33 @@ class NotificationItem {
 
 class NotificationService {
   
+  /// طلب كافة الصلاحيات المطلوبة (للأندرويد والكمبيوتر) فور بدء تشغيل الإشعارات
+  static Future<void> requestNotificationPermissions() async {
+    if (Platform.isAndroid) {
+      try {
+        // 1. طلب صلاحية الإشعارات والتخزين
+        await [
+          Permission.notification,
+          Permission.storage,
+        ].request();
+
+        // 2. طلب صلاحية الظهور فوق التطبيقات الأخرى (System Alert Window)
+        if (await Permission.systemAlertWindow.isDenied) {
+          await Permission.systemAlertWindow.request();
+        }
+
+        // 3. طلب صلاحية إدارة الملفات للأندرويد الحديث
+        if (await Permission.manageExternalStorage.isDenied) {
+          await Permission.manageExternalStorage.request();
+        }
+      } catch (e) {
+        debugPrint('⚠️ خطأ أثناء طلب صلاحيات الإشعارات على الأندرويد: $e');
+      }
+    } else if (Platform.isWindows) {
+      debugPrint('🖥️ التطبيق يعمل على نظام ويندوز، صلاحيات الإشعارات مفعلة تلقائياً.');
+    }
+  }
+
   /// جلب قائمة المعرّفات المقروءة بشكل مضمون وموحّد
   static List<String> _getReadIds() {
     if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {

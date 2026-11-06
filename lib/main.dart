@@ -5,8 +5,10 @@ import 'package:flutter/services.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'services/auto_save_service.dart';
 import 'services/notification_service.dart';
 import 'app_data.dart';
+import 'services/local_network_scanner.dart';
 import 'services/licensing_service.dart';
 import 'services/local_storage_service.dart';
 import 'services/file_backup_service.dart';
@@ -46,7 +48,7 @@ Future<void> requestAllAppPermissions() async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+  AutoSaveService.startAutoSave(intervalInSeconds: 30);
   try {
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
@@ -819,101 +821,15 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           icon: const Icon(Icons.wifi_find, color: Colors.white),
                           label: const Text('بحث أوتوماتيكي عن أجهزة الشبكة (إضافة / تجاهل)', style: TextStyle(color: Colors.white, fontSize: 13)),
-                          onPressed: () async {
-                            Navigator.pop(context);
-                            showDialog(
-                              context: context,
-                              builder: (context) => Directionality(
-                                textDirection: TextDirection.rtl,
-                                child: AlertDialog(
-                                  backgroundColor: const Color(0xFF1E1E1E),
-                                  title: const Row(
-                                    children: [
-                                      Icon(Icons.router, color: Colors.amberAccent, size: 24),
-                                      SizedBox(width: 8),
-                                      Text('نتائج فحص أجهزة الشبكة المحلية', style: TextStyle(color: Colors.amberAccent, fontSize: 15, fontWeight: FontWeight.bold)),
-                                    ],
-                                  ),
-                                  content: SizedBox(
-                                    width: 450,
-                                    height: 250,
-                                    child: FutureBuilder<List<String>>(
-                                      future: LocalNetworkScanner.scanLocalDevices(),
-                                      builder: (context, snapshot) {
-                                        if (snapshot.connectionState == ConnectionState.waiting) {
-                                          return const Center(
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                CircularProgressIndicator(color: Colors.amberAccent),
-                                                SizedBox(height: 12),
-                                                Text('جاري فحص الشبكة المحلية والبحث عن الأجهزة...', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                              ],
-                                            ),
-                                          );
-                                        }
-                                        List<String> devices = snapshot.data ?? [];
-                                        if (devices.isEmpty) {
-                                          return const Center(
-                                            child: Text('لم يتم العثور على أجهزة أخرى على الشبكة حالياً.', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                                          );
-                                        }
-                                        return ListView.builder(
-                                          itemCount: devices.length,
-                                          itemBuilder: (context, index) {
-                                            String ip = devices[index];
-                                            return Card(
-                                              color: const Color(0xFF2C2C2C),
-                                              child: ListTile(
-                                                leading: const Icon(Icons.computer, color: Colors.cyanAccent),
-                                                title: Text('جهاز بروتوكول IP: $ip', style: const TextStyle(color: Colors.white, fontSize: 13)),
-                                                trailing: Row(
-                                                  mainAxisSize: MainAxisSize.min,
-                                                  children: [
-                                                    ElevatedButton.icon(
-                                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, minimumSize: const Size(70, 30)),
-                                                      icon: const Icon(Icons.add, size: 14, color: Colors.white),
-                                                      label: const Text('إضافة', style: TextStyle(color: Colors.white, fontSize: 11)),
-                                                      onPressed: () {
-                                                        ScaffoldMessenger.of(context).showSnackBar(
-                                                          SnackBar(content: Text('تم إضافة الجهاز ($ip) لشبكة المنظومة بنجاح!'), backgroundColor: Colors.green),
-                                                        );
-                                                        Navigator.pop(context);
-                                                      },
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    ElevatedButton.icon(
-                                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade800, minimumSize: const Size(70, 30)),
-                                                      icon: const Icon(Icons.close, size: 14, color: Colors.white),
-                                                      label: const Text('تجاهل', style: TextStyle(color: Colors.white, fontSize: 11)),
-                                                      onPressed: () {
-                                                        ScaffoldMessenger.of(context).showSnackBar(
-                                                          const SnackBar(content: Text('تم تجاهل الجهاز.'), backgroundColor: Colors.grey),
-                                                        );
-                                                        Navigator.pop(context);
-                                                      },
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(context),
-                                      child: const Text('إغلاق', style: TextStyle(color: Colors.cyanAccent)),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 10),
+                         onPressed: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const NetworkScannerScreen()),
+                );
+              },
+            ), // قفلة زر البحث عن أجهزة الشبكة
+            const SizedBox(height: 10),
                         // زر تصدير المنظومة بالكامل إلى ملف PDF من الإعدادات
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(

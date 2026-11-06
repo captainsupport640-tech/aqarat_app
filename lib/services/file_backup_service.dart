@@ -3,38 +3,44 @@ import 'dart:io' show File, Directory, Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import '../app_data.dart';
 import 'local_storage_service.dart';
 import 'google_drive_service.dart';
 import 'cloud_sync_service.dart';
-import 'security_manager.dart';
 
 class FileBackupService {
 
-  static Future<File?> _getBackupFile() async {
+  /// الحصول على المسار الحقيقي لمجلد المستندات (Documents/Aqarat_Backups)
+  static Future<Directory?> getDocumentsDirectory() async {
     if (kIsWeb) return null;
-
-    Directory? directory;
     try {
-      if (Platform.isAndroid) {
-        directory = await getExternalStorageDirectory();
+      Directory? targetDir;
+      if (Platform.isWindows) {
+        final userProfile = Platform.environment['USERPROFILE'];
+        if (userProfile != null) {
+          targetDir = Directory('$userProfile\\Documents\\Aqarat_Backups');
+        }
       }
-      directory ??= await getApplicationSupportDirectory();
+      targetDir ??= await getApplicationDocumentsDirectory();
 
-      final Directory backupFolder = Directory('${directory.path}/Aqarat_Backups');
+      final Directory backupFolder = Directory('${targetDir.path}/Aqarat_Backups');
       if (!await backupFolder.exists()) {
         await backupFolder.create(recursive: true);
       }
-      return File('${backupFolder.path}/aqarat_backup.json');
+      return backupFolder;
     } catch (e) {
       debugPrint('خطأ في تحديد مسار المستندات: $e');
-      try {
-        directory = await getApplicationDocumentsDirectory();
-        return File('${directory.path}/aqarat_backup.json');
-      } catch (_) {
-        return null;
-      }
+      return null;
     }
+  }
+
+  static Future<File?> _getBackupFile() async {
+    final folder = await getDocumentsDirectory();
+    if (folder == null) return null;
+    return File('${folder.path}/aqarat_backup.json');
   }
 
   static void _mergeDataIntoAppData(Map<String, dynamic> sourceData) {
@@ -73,6 +79,127 @@ class FileBackupService {
     });
   }
 
+  /// 📄 دالة إنشاء وتوليد ملف PDF حقيقي وحفظه في مجلد Documents
+  static Future<bool> exportPdfToDocuments(BuildContext context) async {
+    try {
+      final pdf = pw.Document();
+
+      // تحميل خط يدعم اللغة العربية للـ PDF
+      final fontData = await PdfGoogleFonts.cairoRegular();
+      final fontBoldData = await PdfGoogleFonts.cairoBold();
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          theme: pw.ThemeData.withFont(
+            base: fontData,
+            bold: fontBoldData,
+          ),
+          textDirection: pw.TextDirection.rtl,
+          build: (pw.Context context) {
+            List<pw.Widget> widgets = [];
+
+            // ترويسة التقرير
+            widgets.add(
+              pw.Header(
+                level: 0,
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      'تقرير منظومة الكابتن الشامل لإدارة العقارات',
+                      style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.indigo900),
+                    ),
+                    pw.Text(
+                      'التاريخ: ${DateTime.now().toString().split(' ')[0]}',
+                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+                    ),
+                  ],
+                ),
+              ),
+            );
+
+            widgets.add(pw.SizedBox(height: 10));
+
+            // تجميع وتنسيق البيانات من كافة أقسام المنظومة
+            AppData.storage.forEach((sectionTitle, items) {
+              if (items.isNotEmpty) {
+                widgets.add(
+                  pw.Container(
+                    margin: const pw.EdgeInsets.symmetric(vertical: 8),
+                    padding: const pw.EdgeInsets.all(6),
+                    color: PdfColors.grey200,
+                    child: pw.Text(
+                      'قسم: $sectionTitle (إجمالي البيانات: ${items.length})',
+                      style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900),
+                    ),
+                  ),
+                );
+
+                for (var item in items) {
+                  if (item is Map) {
+                    List<String> details = [];
+                    item.forEach((k, v) {
+                      if (v != null && v.toString().trim().isNotEmpty) {
+                        details.add('$k: $v');
+                      }
+                    });
+
+                    widgets.add(
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(4),
+                        margin: const pw.EdgeInsets.only(bottom: 4),
+                        decoration: pw.BoxDecoration(
+                          border: pw.Border.all(color: PdfColors.grey300),
+                        ),
+                        child: pw.Text(
+                          details.join(' | '),
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
+                      ),
+                    );
+                  }
+                }
+              }
+            });
+
+            return widgets;
+          },
+        ),
+      );
+
+      // حفظ الملف الحقيقي داخل مجلد Documents/Aqarat_Backups
+      final docsFolder = await getDocumentsDirectory();
+      if (docsFolder == null) return false;
+
+      final pdfFile = File('${docsFolder.path}/تقرير_المنظومة_${DateTime.now().millisecondsSinceEpoch}.pdf');
+      await pdfFile.writeAsBytes(await pdf.save());
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ تم حفظ ملف الـ PDF بنجاح في:\n${pdfFile.path}'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+      return true;
+    } catch (e) {
+      debugPrint('خطأ إنشاء وتصدير الـ PDF: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ فشل تصدير الـ PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false;
+    }
+  }
+
+  /// تنفيذ النسخ الاحتياطي التلقائي للأرشيف والبيانات
   static Future<bool> backupToFile(BuildContext context) async {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -87,31 +214,27 @@ class FileBackupService {
     try {
       await LocalStorageService.saveLocally();
 
+      String? localSavedPath;
       if (!kIsWeb) {
         await LocalStorageService.exportBackupToDocumentsAuto();
         File? file = await _getBackupFile();
         if (file != null) {
           String jsonData = jsonEncode(AppData.storage);
           await file.writeAsString(jsonData);
+          localSavedPath = file.path;
         }
       }
 
       bool driveSuccess = await GoogleDriveService.uploadBackupToDrive();
       await CloudSyncService.syncToCloud(isAuto: true);
 
-      String userPhone = SecurityManager.currentUsername.trim();
-      if (userPhone.isEmpty) userPhone = '01200626469';
-
-      String userEmail = await LocalStorageService.getPersonalGmail();
-      if (userEmail.isEmpty) userEmail = await LocalStorageService.getStoredEmail();
-
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               driveSuccess
-                  ? '✅ تم النسخ الاحتياطي وتحديث Google Drive والفايربيس بنجاح!'
-                  : '⚠️ تم حفظ البيانات محلياً، وتعذر اتصال الجيميل/السحابة.',
+                  ? '✅ تم النسخ الاحتياطي وحفظه في Documents وتحديث Google Drive بنجاح!'
+                  : '⚠️ تم حفظ البيانات في ($localSavedPath)، وتعذر اتصال السحابة.',
             ),
             backgroundColor: driveSuccess ? Colors.green : Colors.orange,
             duration: const Duration(seconds: 4),
