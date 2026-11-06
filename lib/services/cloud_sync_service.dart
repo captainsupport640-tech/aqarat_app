@@ -13,11 +13,13 @@ class CloudSyncService {
   static const String _dbUrl = "https://aqarat-captain-default-rtdb.firebaseio.com";
   static StreamSubscription? _realtimeSubscription;
   static Timer? _restPollingTimer;
+  
+  // طابور العمليات المنتظرة لمنع التعارض والتهنيج
+  static final List<Function> _writeQueue = [];
+  static bool _isProcessingQueue = false;
 
-  /// فحص هل البيئة تعمل برست API (على الويب أو على الويندوز لمنع خطأ MissingPluginException)
   static bool get _useRestApi => kIsWeb || defaultTargetPlatform == TargetPlatform.windows;
 
-  /// 0️⃣ تهيئة دعم الأوفلاين بأمان تام
   static void initOfflineSupport() {
     try {
       if (!_useRestApi) {
@@ -28,10 +30,14 @@ class CloudSyncService {
     }
   }
 
-  /// توليد مفتاح الشركة الثنائي النظيف
   static Future<String> _getDualSyncKey() async {
-    String email = await LocalStorageService.getPersonalGmail();
-    if (email.isEmpty) email = await LocalStorageService.getStoredEmail();
+    String email = SecurityManager.currentCompanyAdminEmail.trim();
+    if (email.isEmpty) {
+      email = await LocalStorageService.getPersonalGmail();
+    }
+    if (email.isEmpty) {
+      email = await LocalStorageService.getStoredEmail();
+    }
     email = email.trim();
 
     if (email.isEmpty || !email.contains('@')) {
@@ -41,7 +47,7 @@ class CloudSyncService {
     return email.toLowerCase().replaceAll('.', '_').replaceAll('@', '_at_');
   }
 
-  /// 1️⃣ المزامنة التلقائية اللحظية "رايح جاي" بين الموبايل والكمبيوتر
+  /// 1️⃣ الاستماع اللحظي وتفعيل وضع الاستقبال الفوري
   static Future<void> startAutoSyncListener(Function() onDataUpdated) async {
     try {
       _realtimeSubscription?.cancel();
@@ -61,23 +67,67 @@ class CloudSyncService {
           }
         });
       } else {
-        // فحص دوري فورس وسريع بين الأجهزة لضمان عدم وجود أي تأخير في الاستماع
-        _restPollingTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+        _restPollingTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
           await _fetchRemoteDataSilently(onUpdated: onDataUpdated);
         });
       }
     } catch (e) {
-      debugPrint('خطأ في الاستماع اللحظي للتحديثات: $e');
+      debugPrint('خطأ في الاستماع اللحظي: $e');
     }
   }
 
-  /// 2️⃣ رفع البيانات الموحدة لـ Firebase
+  /// 2️⃣ بث إشارة الكتابة الحية (إشعار: فلان يكتب/يعدل الآن)
+  static Future<void> broadcastUserAction({
+    required BuildContext context,
+    required String actionType, // "إضافة" أو "تعديل" أو "حذف"
+  }) async {
+    String username = SecurityManager.currentUsername.isEmpty ? 'المستخدم' : SecurityManager.currentUsername;
+    String role = SecurityManager.currentUserRole;
+
+    if (context.mounted) {
+      notifyDeviceSyncing(
+        context: context,
+        actionUser: username,
+        actionRole: role,
+        actionType: actionType,
+      );
+    }
+  }
+
+  /// 3️⃣ إضافة عملية الحفظ والتعديل في طابور الدور (Queue Process)
+  static Future<void> enqueueSaveAndSync(BuildContext context, String actionType) async {
+    // 1. إظهار الإشعار الحي للمستخدم الحاضر والبث
+    broadcastUserAction(context: context, actionType: actionType);
+
+    // 2. إدخال العملية في طابور الانتظار
+    _writeQueue.add(() async {
+      await LocalStorageService.saveLocally();
+      await syncToCloud(isAuto: true);
+    });
+
+    // 3. معالجة الطابور بالتسلسل وبدون تهنيج الشاشة
+    _processWriteQueue();
+  }
+
+  static Future<void> _processWriteQueue() async {
+    if (_isProcessingQueue || _writeQueue.isEmpty) return;
+    _isProcessingQueue = true;
+
+    while (_writeQueue.isNotEmpty) {
+      final task = _writeQueue.removeAt(0);
+      try {
+        await task();
+      } catch (e) {
+        debugPrint('خطأ في تنفيذ طابور التعديلات: $e');
+      }
+    }
+
+    _isProcessingQueue = false;
+  }
+
+  /// 4️⃣ رفع البيانات الموحدة لـ Firebase
   static Future<String?> syncToCloudWithError({bool isAuto = false}) async {
     try {
-      String companyEmail = await LocalStorageService.getPersonalGmail();
-      if (companyEmail.isEmpty) companyEmail = await LocalStorageService.getStoredEmail();
-      companyEmail = companyEmail.trim();
-
       String syncKey = await _getDualSyncKey();
       String jsonData = jsonEncode(AppData.storage);
       String nowIso = DateTime.now().toIso8601String();
@@ -87,60 +137,34 @@ class CloudSyncService {
         'data': jsonData,
         'last_updated': nowIso,
         'updated_by_phone': currentPhone,
-        'email': companyEmail,
+        'email': SecurityManager.currentCompanyAdminEmail,
       };
 
-      // تنفيذ النسخ الاحتياطي المجدول حصرياً لمدير الشركة في الخلفية بصمت
       if (SecurityManager.isAdmin) {
         GoogleDriveService.checkAndExecuteScheduledBackup();
       }
 
-      // استخدام REST API على الويب وعلى الويندوز لمنع MissingPluginException
       if (_useRestApi) {
         final masterUrl = Uri.parse("$_dbUrl/companies_storage/$syncKey/1_master_database.json");
         final response = await http.put(
           masterUrl,
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode(masterPayload),
-        ).timeout(const Duration(seconds: 10));
-
-        final accountStoreUrl = Uri.parse("$_dbUrl/companies_storage/$syncKey/3_accounts_store.json");
-        await http.post(
-          accountStoreUrl,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'user_phone': currentPhone,
-            'user_email': '$currentPhone@aqarat.com',
-            'timestamp': nowIso,
-            'action': 'مزامنة وتحديث البيانات عبر REST API',
-          }),
-        ).timeout(const Duration(seconds: 10));
+        ).timeout(const Duration(seconds: 8));
 
         if (response.statusCode == 200 || response.statusCode == 204) {
-          debugPrint('✅ تم الرفع والمزامنة الموحدة بنجاح عبر REST API.');
           return null;
         } else {
-          return 'خطأ سيرفر فايربيس (كود ${response.statusCode}): ${response.body}';
+          return 'خطأ سيرفر (كود ${response.statusCode})';
         }
       } else {
         FirebaseDatabase db = FirebaseDatabase.instance;
         db.goOnline();
-        
         DatabaseReference companyRef = db.ref("companies_storage/$syncKey");
-        
-        await companyRef.child("1_master_database").set(masterPayload).timeout(const Duration(seconds: 10));
-
-        await companyRef.child("3_accounts_store").push().set({
-          'user_phone': currentPhone,
-          'user_email': '$currentPhone@aqarat.com',
-          'timestamp': nowIso,
-          'action': 'مزامنة وتحديث البيانات الموحدة أونلاين',
-        }).timeout(const Duration(seconds: 10));
-
+        await companyRef.child("1_master_database").set(masterPayload).timeout(const Duration(seconds: 8));
         return null;
       }
     } catch (e) {
-      debugPrint('❌ السبب الحقيقي للخطأ عند الرفع: $e');
       return e.toString();
     }
   }
@@ -150,14 +174,12 @@ class CloudSyncService {
     return err == null;
   }
 
-  /// 3️⃣ سحب البيانات الذكي: تحميل البيانات المحلية أولاً فوراً ثم التحديث السحابي في الخلفية
   static Future<bool> syncFromCloud({bool isAuto = false}) async {
     await LocalStorageService.loadLocally();
     _fetchRemoteDataSilently();
     return true;
   }
 
-  /// دالة جلب البيانات من السحابة في الخلفية
   static Future<void> _fetchRemoteDataSilently({Function()? onUpdated}) async {
     try {
       String syncKey = await _getDualSyncKey();
@@ -165,7 +187,7 @@ class CloudSyncService {
 
       if (_useRestApi) {
         final url = Uri.parse("$_dbUrl/companies_storage/$syncKey/1_master_database.json");
-        final response = await http.get(url).timeout(const Duration(seconds: 6));
+        final response = await http.get(url).timeout(const Duration(seconds: 5));
         if (response.statusCode == 200 && response.body != 'null') {
           rawData = jsonDecode(response.body) as Map?;
         }
@@ -173,7 +195,7 @@ class CloudSyncService {
         FirebaseDatabase db = FirebaseDatabase.instance;
         db.goOnline();
         DatabaseReference ref = db.ref("companies_storage/$syncKey/1_master_database");
-        DataSnapshot snapshot = await ref.get().timeout(const Duration(seconds: 6));
+        DataSnapshot snapshot = await ref.get().timeout(const Duration(seconds: 5));
         if (snapshot.exists && snapshot.value != null) {
           rawData = Map.from(snapshot.value as Map);
         }
@@ -184,15 +206,11 @@ class CloudSyncService {
         if (changed) {
           await LocalStorageService.saveLocally();
           if (onUpdated != null) onUpdated();
-          debugPrint('✅ تم تحديث البيانات السحابية ومزامنتها لحظياً في الخلفية.');
         }
       }
-    } catch (e) {
-      debugPrint('⚠️ المزامنة السحابية تعمل أوفلاين أو تعذرت في الخلفية: $e');
-    }
+    } catch (_) {}
   }
 
-  /// تحديث الذاكرة المحلية بالدمج الذكي المباشر دون أخطاء تنميط
   static bool _updateLocalMemorySmart(String rawJson) {
     try {
       Map decodedData = jsonDecode(rawJson);
@@ -221,27 +239,18 @@ class CloudSyncService {
       });
 
       return hasChanges;
-    } catch (e) {
-      debugPrint('خطأ تحديث الذاكرة المحلية: $e');
+    } catch (_) {
       return false;
     }
   }
 
-  /// 4️⃣ الدالة التي ينادي عليها الزر اليدوي في شاشة الإعدادات
   static Future<void> performCloudSync(BuildContext context, {bool isAuto = false}) async {
     String? errorDetails = await syncToCloudWithError(isAuto: isAuto);
-
     if (!isAuto && context.mounted) {
       bool success = errorDetails == null;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          duration: const Duration(seconds: 8),
-          content: Text(
-            success
-                ? '✅ تمت مزامنة ورفع البيانات الموحدة أونلاين بنجاح إلى السحابة!'
-                : '❌ فشل الاتصال بالسحابة! السبب:\n$errorDetails',
-            style: const TextStyle(fontSize: 12),
-          ),
+          content: Text(success ? '✅ تمت المزامنة السحابية بنجاح!' : '❌ فشل الاتصال بالسحابة'),
           backgroundColor: success ? Colors.green : Colors.redAccent,
         ),
       );
@@ -253,12 +262,13 @@ class CloudSyncService {
     await syncToCloud(isAuto: true);
   }
 
-  /// إرسال إشعار لحظي لجميع الأجهزة بالتعديل القادم وطابور الدور
-  static Future<void> notifyDeviceSyncing({
+  /// 5️⃣ الشريط السفلي لإظهار اسم وتخصص من يقوم بالتعديل حالياً
+  static void notifyDeviceSyncing({
     required BuildContext context,
     required String actionUser,
     required String actionRole,
-  }) async {
+    String actionType = 'تعديل',
+  }) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -275,15 +285,15 @@ class CloudSyncService {
           content: Row(
             children: [
               const SizedBox(
-                width: 20,
-                height: 20,
+                width: 18,
+                height: 18,
                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.cyanAccent),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '🔄 جاري استلام ومزامنة تعديل جديد بواسطة: $actionUser ($actionRole)',
-                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                  '✍️ جاري إجراء ($actionType) بواسطة: $actionUser ($actionRole)...',
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                 ),
               ),
             ],

@@ -148,11 +148,11 @@ class _HomeScreenState extends State<HomeScreen> {
             });
           });
 
-          // إرسال شريط تنبيه آلي يفيد باستلام التحديث اللحظي من الجهاز التابع
           CloudSyncService.notifyDeviceSyncing(
             context: context,
             actionUser: SecurityManager.currentUsername.isEmpty ? 'جهاز مرتبط' : SecurityManager.currentUsername,
             actionRole: SecurityManager.currentUserRole,
+            actionType: 'تحديث لحظي',
           );
         }
       },
@@ -386,8 +386,37 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  /// توجيه المستخدم المباشر للشاشة المعنية بالإشعار
+  void _navigateToNotificationTarget(BuildContext context, String bodyOrTitle) {
+    Navigator.pop(context);
+
+    Widget targetScreen = const HomeScreen();
+    String text = bodyOrTitle.toLowerCase();
+
+    if (text.contains('عملاء') || text.contains('عميل')) {
+      targetScreen = const ClientsScreen();
+    } else if (text.contains('سمسار') || text.contains('سماسرة')) {
+      targetScreen = const BrokersScreen();
+    } else if (text.contains('طلب') || text.contains('طلبات')) {
+      targetScreen = const CustomerRequestsScreen();
+    } else if (text.contains('بيع')) {
+      targetScreen = const ForSaleScreen();
+    } else if (text.contains('إيجار') || text.contains('ايجار')) {
+      targetScreen = const ForRentScreen();
+    } else if (text.contains('معاينة') || text.contains('معاينات')) {
+      targetScreen = const InspectionsScreen();
+    } else if (text.contains('عملية') || text.contains('عمليات')) {
+      targetScreen = const CompletedOperationsScreen();
+    } else if (text.contains('حساب') || text.contains('حسابات')) {
+      targetScreen = const AccountsScreen();
+    }
+
+    Navigator.push(context, MaterialPageRoute(builder: (context) => targetScreen));
+  }
+
   void _showNotificationsDialog(BuildContext context) {
     TrashBinManager.markAllAsRead();
+    setState(() {});
 
     final storedNotifications = AppData.storage['الإشعارات'] ?? [];
     final storedInspections = AppData.storage['المعاينات'] ?? [];
@@ -476,14 +505,20 @@ class _HomeScreenState extends State<HomeScreen> {
                           itemCount: storedNotifications.length,
                           itemBuilder: (context, index) {
                             final notif = Map<String, dynamic>.from(storedNotifications[index] as Map);
+                            String titleText = notif['العنوان'] ?? notif['title'] ?? '';
+                            String bodyText = notif['التفاصيل'] ?? notif['body'] ?? '';
+
                             return Card(
                               color: const Color(0xFF1E1E1E),
                               margin: const EdgeInsets.symmetric(vertical: 4),
                               child: ListTile(
                                 leading: const Icon(Icons.notifications, color: Colors.cyanAccent, size: 20),
-                                title: Text(notif['العنوان'] ?? notif['title'] ?? '', style: const TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                                subtitle: Text(notif['التفاصيل'] ?? notif['body'] ?? '', style: const TextStyle(color: Colors.white70, fontSize: 11)),
-                                trailing: Text(notif['التاريخ'] ?? notif['time'] ?? '', style: const TextStyle(color: Colors.grey, fontSize: 9)),
+                                title: Text(titleText, style: const TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                                subtitle: Text(bodyText, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                                trailing: const Icon(Icons.arrow_forward_ios, color: Colors.cyanAccent, size: 14),
+                                onTap: () {
+                                  _navigateToNotificationTarget(context, '$titleText $bodyText');
+                                },
                               ),
                             );
                           },
@@ -764,7 +799,6 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    // فحص صلاحية الـ 7 أيام للنسخ التجريبية قبل فتح الشاشة
     bool canAccess = await AppStorageManager.checkSettingsAccessAllowed(context);
     if (!canAccess) return;
 
@@ -1589,9 +1623,13 @@ class LocalNetworkScanner {
           if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
             String subnet = addr.address.substring(0, addr.address.lastIndexOf('.'));
             List<Future> futures = [];
-            for (int i = 1; i < 25; i++) {
+            
+            // مسح كامل النطاق الخاص بالشبكة المحلية (من 1 إلى 254)
+            for (int i = 1; i < 255; i++) {
               String targetIp = '$subnet.$i';
-              futures.add(_checkDevice(targetIp, foundDevices));
+              if (targetIp != addr.address) {
+                futures.add(_checkDevice(targetIp, foundDevices));
+              }
             }
             await Future.wait(futures);
           }
@@ -1605,9 +1643,16 @@ class LocalNetworkScanner {
 
   static Future<void> _checkDevice(String ip, List<String> foundDevices) async {
     try {
-      final socket = await Socket.connect(ip, 8080, timeout: const Duration(milliseconds: 300));
+      // فحص الاستجابة العاكسة على المنافذ المباشرة (8080، 80، 443)
+      final socket = await Socket.connect(ip, 8080, timeout: const Duration(milliseconds: 150));
       foundDevices.add(ip);
       socket.destroy();
-    } catch (_) {}
+    } catch (_) {
+      try {
+        final altSocket = await Socket.connect(ip, 80, timeout: const Duration(milliseconds: 150));
+        foundDevices.add(ip);
+        altSocket.destroy();
+      } catch (_) {}
+    }
   }
 }
