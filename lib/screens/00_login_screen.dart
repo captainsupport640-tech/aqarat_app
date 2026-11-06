@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:local_auth/local_auth.dart';
 import '../main.dart';
 import '../services/local_storage_service.dart';
 import '../services/security_manager.dart';
@@ -50,8 +49,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _showPassword = false;
   bool _rememberMe = true;
-  bool _canCheckBiometrics = false;
-  final LocalAuthentication auth = LocalAuthentication();
 
   final FocusNode _usernameFocus = FocusNode();
   final FocusNode _passwordFocus = FocusNode();
@@ -91,63 +88,8 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _loadInitialData();
-    _checkBiometricsSupport();
   }
 
-  void _checkBiometricsSupport() async {
-    try {
-      bool canCheck = await auth.canCheckBiometrics || await auth.isDeviceSupported();
-      setState(() => _canCheckBiometrics = canCheck);
-    } catch (_) {}
-  }
-
-  Future<void> _authenticateWithBiometrics() async {
-    try {
-      bool authenticated = await auth.authenticate(
-        localizedReason: 'الرجاء إثبات البصمة لتسجيل الدخول السريع للمنظومة',
-      );
-
-      if (authenticated) {
-        final prefs = await SharedPreferences.getInstance();
-        String savedUsername = prefs.getString('saved_username') ?? _usernameController.text.trim();
-        String savedPassword = prefs.getString('saved_password') ?? _passwordController.text.trim();
-
-        if (savedUsername.isNotEmpty && savedPassword.isNotEmpty) {
-          _usernameController.text = savedUsername;
-          _passwordController.text = savedPassword;
-          _login();
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('⚠️ لا توجد بيانات مسجلة مسبقاً، يرجى الدخول برقم الموبايل وكلمة السر أول مرة.'),
-                backgroundColor: Colors.orange,
-              ),
-            );
-          }
-        }
-      }
-    } on PlatformException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('تنبيه البصمة: يرجى التأكد من تفعيل البصمة في إعدادات الهاتف (${e.message})'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تعذر تسجيل الدخول بالبصمة حالياً، يرجى استخدام كلمة السر.'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    }
-  }
-    
   @override
   void dispose() {
     _usernameController.dispose();
@@ -330,7 +272,6 @@ class _LoginScreenState extends State<LoginScreen> {
   void _executeSuccessfulLogin(String username, String gmail, {bool isGuest = false, bool isMasterAdmin = false}) async {
     final prefs = await SharedPreferences.getInstance();
 
-    // حفظ حالة الـ Remember Me بدقة حسب اختيار المستخدم الفعلي
     await prefs.setBool('remember_me', _rememberMe);
 
     if (!isGuest && gmail.isNotEmpty) {
@@ -338,7 +279,6 @@ class _LoginScreenState extends State<LoginScreen> {
       await LocalStorageService.savePersonalGmail(gmail);
     }
 
-    // إذا كان المربع محدداً، يتم حفظ بيانات الدخول والبصمة، وإذا أُلغي يتم تفريغها
     if (_rememberMe && !isGuest) {
       await prefs.setString('saved_gmail', gmail);
       await prefs.setString('saved_username', username);
@@ -772,28 +712,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                       ),
                       const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.amber,
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                              onPressed: _login,
-                              child: const Text('دخول للسيستم', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
-                            ),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.amber,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
-                          if (_canCheckBiometrics) ...[
-                            const SizedBox(width: 10),
-                            IconButton(
-                              onPressed: _authenticateWithBiometrics,
-                              icon: const Icon(Icons.fingerprint, color: Colors.cyanAccent, size: 36),
-                              tooltip: 'دخول سريع بالبصمة',
-                            ),
-                          ]
-                        ],
+                          onPressed: _login,
+                          child: const Text('دخول للسيستم', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
+                        ),
                       ),
                       const SizedBox(height: 10),
                       SizedBox(

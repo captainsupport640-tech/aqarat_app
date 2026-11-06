@@ -14,7 +14,6 @@ class CloudSyncService {
   static StreamSubscription? _realtimeSubscription;
   static Timer? _restPollingTimer;
   
-  // طابور العمليات المنتظرة لمنع التعارض والتهنيج
   static final List<Function> _writeQueue = [];
   static bool _isProcessingQueue = false;
 
@@ -47,7 +46,7 @@ class CloudSyncService {
     return email.toLowerCase().replaceAll('.', '_').replaceAll('@', '_at_');
   }
 
-  /// 1️⃣ الاستماع اللحظي وتفعيل وضع الاستقبال الفوري
+  /// 1️⃣ الاستماع اللحظي على الداتا المركزية المعتمدة
   static Future<void> startAutoSyncListener(Function() onDataUpdated) async {
     try {
       _realtimeSubscription?.cancel();
@@ -56,7 +55,7 @@ class CloudSyncService {
       String syncKey = await _getDualSyncKey();
 
       if (!_useRestApi) {
-        DatabaseReference ref = FirebaseDatabase.instance.ref("companies_storage/$syncKey/1_master_database/data");
+        DatabaseReference ref = FirebaseDatabase.instance.ref("companies_storage/$syncKey/3_master_database/data");
         _realtimeSubscription = ref.onValue.listen((event) async {
           if (event.snapshot.exists && event.snapshot.value != null) {
             bool hasChanges = _updateLocalMemorySmart(event.snapshot.value.toString());
@@ -76,10 +75,10 @@ class CloudSyncService {
     }
   }
 
-  /// 2️⃣ بث إشارة الكتابة الحية (إشعار: فلان يكتب/يعدل الآن)
+  /// 2️⃣ بث إشارة الحركة الحية
   static Future<void> broadcastUserAction({
     required BuildContext context,
-    required String actionType, // "إضافة" أو "تعديل" أو "حذف"
+    required String actionType,
   }) async {
     String username = SecurityManager.currentUsername.isEmpty ? 'المستخدم' : SecurityManager.currentUsername;
     String role = SecurityManager.currentUserRole;
@@ -94,18 +93,15 @@ class CloudSyncService {
     }
   }
 
-  /// 3️⃣ إضافة عملية الحفظ والتعديل في طابور الدور (Queue Process)
+  /// 3️⃣ طابور الدور المرتّب للعمليات (Queue Engine)
   static Future<void> enqueueSaveAndSync(BuildContext context, String actionType) async {
-    // 1. إظهار الإشعار الحي للمستخدم الحاضر والبث
     broadcastUserAction(context: context, actionType: actionType);
 
-    // 2. إدخال العملية في طابور الانتظار
     _writeQueue.add(() async {
       await LocalStorageService.saveLocally();
-      await syncToCloud(isAuto: true);
+      await syncToCloud(isAuto: true, actionDescription: actionType);
     });
 
-    // 3. معالجة الطابور بالتسلسل وبدون تهنيج الشاشة
     _processWriteQueue();
   }
 
@@ -125,19 +121,30 @@ class CloudSyncService {
     _isProcessingQueue = false;
   }
 
-  /// 4️⃣ رفع البيانات الموحدة لـ Firebase
-  static Future<String?> syncToCloudWithError({bool isAuto = false}) async {
+  /// 4️⃣ رفع البيانات وتنظيم الشجرة السحابية الثلاثية الدقيقة
+  static Future<String?> syncToCloudWithError({bool isAuto = false, String actionDescription = 'تعديل بيانات'}) async {
     try {
       String syncKey = await _getDualSyncKey();
       String jsonData = jsonEncode(AppData.storage);
       String nowIso = DateTime.now().toIso8601String();
-      String currentPhone = SecurityManager.currentUsername;
+      String currentPhone = SecurityManager.currentUsername.isNotEmpty ? SecurityManager.currentUsername : 'مدير';
+      String currentRole = SecurityManager.currentUserRole;
 
+      // الفرع الثالث: الداتا المركزية وآخر نسخة معتمدة
       Map<String, dynamic> masterPayload = {
         'data': jsonData,
         'last_updated': nowIso,
         'updated_by_phone': currentPhone,
-        'email': SecurityManager.currentCompanyAdminEmail,
+        'updated_by_role': currentRole,
+        'company_admin_email': SecurityManager.currentCompanyAdminEmail,
+      };
+
+      // الفرع الثاني: سجل التعديلات التاريخي (الأحدث فالأحدث: فلان عدل كذا بتاريخ كذا)
+      Map<String, dynamic> logPayload = {
+        'action': actionDescription,
+        'user': currentPhone,
+        'role': currentRole,
+        'timestamp': nowIso,
       };
 
       if (SecurityManager.isAdmin) {
@@ -145,23 +152,21 @@ class CloudSyncService {
       }
 
       if (_useRestApi) {
-        final masterUrl = Uri.parse("$_dbUrl/companies_storage/$syncKey/1_master_database.json");
-        final response = await http.put(
-          masterUrl,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(masterPayload),
-        ).timeout(const Duration(seconds: 8));
+        final masterUrl = Uri.parse("$_dbUrl/companies_storage/$syncKey/3_master_database.json");
+        await http.put(masterUrl, headers: {'Content-Type': 'application/json'}, body: jsonEncode(masterPayload));
 
-        if (response.statusCode == 200 || response.statusCode == 204) {
-          return null;
-        } else {
-          return 'خطأ سيرفر (كود ${response.statusCode})';
-        }
+        final logUrl = Uri.parse("$_dbUrl/companies_storage/$syncKey/2_activity_log.json");
+        await http.post(logUrl, headers: {'Content-Type': 'application/json'}, body: jsonEncode(logPayload));
+
+        return null;
       } else {
         FirebaseDatabase db = FirebaseDatabase.instance;
         db.goOnline();
         DatabaseReference companyRef = db.ref("companies_storage/$syncKey");
-        await companyRef.child("1_master_database").set(masterPayload).timeout(const Duration(seconds: 8));
+        
+        await companyRef.child("3_master_database").set(masterPayload).timeout(const Duration(seconds: 8));
+        await companyRef.child("2_activity_log").push().set(logPayload).timeout(const Duration(seconds: 8));
+
         return null;
       }
     } catch (e) {
@@ -169,8 +174,8 @@ class CloudSyncService {
     }
   }
 
-  static Future<bool> syncToCloud({bool isAuto = false}) async {
-    String? err = await syncToCloudWithError(isAuto: isAuto);
+  static Future<bool> syncToCloud({bool isAuto = false, String actionDescription = 'تعديل'}) async {
+    String? err = await syncToCloudWithError(isAuto: isAuto, actionDescription: actionDescription);
     return err == null;
   }
 
@@ -186,7 +191,7 @@ class CloudSyncService {
       Map? rawData;
 
       if (_useRestApi) {
-        final url = Uri.parse("$_dbUrl/companies_storage/$syncKey/1_master_database.json");
+        final url = Uri.parse("$_dbUrl/companies_storage/$syncKey/3_master_database.json");
         final response = await http.get(url).timeout(const Duration(seconds: 5));
         if (response.statusCode == 200 && response.body != 'null') {
           rawData = jsonDecode(response.body) as Map?;
@@ -194,7 +199,7 @@ class CloudSyncService {
       } else {
         FirebaseDatabase db = FirebaseDatabase.instance;
         db.goOnline();
-        DatabaseReference ref = db.ref("companies_storage/$syncKey/1_master_database");
+        DatabaseReference ref = db.ref("companies_storage/$syncKey/3_master_database");
         DataSnapshot snapshot = await ref.get().timeout(const Duration(seconds: 5));
         if (snapshot.exists && snapshot.value != null) {
           rawData = Map.from(snapshot.value as Map);
@@ -245,7 +250,7 @@ class CloudSyncService {
   }
 
   static Future<void> performCloudSync(BuildContext context, {bool isAuto = false}) async {
-    String? errorDetails = await syncToCloudWithError(isAuto: isAuto);
+    String? errorDetails = await syncToCloudWithError(isAuto: isAuto, actionDescription: 'مزامنة يدوية');
     if (!isAuto && context.mounted) {
       bool success = errorDetails == null;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -259,10 +264,9 @@ class CloudSyncService {
 
   static Future<void> saveAndSyncInstant() async {
     await LocalStorageService.saveLocally();
-    await syncToCloud(isAuto: true);
+    await syncToCloud(isAuto: true, actionDescription: 'حفظ وتحديث فوري');
   }
 
-  /// 5️⃣ الشريط السفلي لإظهار اسم وتخصص من يقوم بالتعديل حالياً
   static void notifyDeviceSyncing({
     required BuildContext context,
     required String actionUser,

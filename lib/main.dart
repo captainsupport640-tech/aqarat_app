@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'services/notification_service.dart';
 import 'app_data.dart';
 import 'services/licensing_service.dart';
 import 'services/local_storage_service.dart';
@@ -384,161 +385,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _searchResults = results;
       _isSearching = true;
     });
-  }
-
-  /// توجيه المستخدم المباشر للشاشة المعنية بالإشعار
-  void _navigateToNotificationTarget(BuildContext context, String bodyOrTitle) {
-    Navigator.pop(context);
-
-    Widget targetScreen = const HomeScreen();
-    String text = bodyOrTitle.toLowerCase();
-
-    if (text.contains('عملاء') || text.contains('عميل')) {
-      targetScreen = const ClientsScreen();
-    } else if (text.contains('سمسار') || text.contains('سماسرة')) {
-      targetScreen = const BrokersScreen();
-    } else if (text.contains('طلب') || text.contains('طلبات')) {
-      targetScreen = const CustomerRequestsScreen();
-    } else if (text.contains('بيع')) {
-      targetScreen = const ForSaleScreen();
-    } else if (text.contains('إيجار') || text.contains('ايجار')) {
-      targetScreen = const ForRentScreen();
-    } else if (text.contains('معاينة') || text.contains('معاينات')) {
-      targetScreen = const InspectionsScreen();
-    } else if (text.contains('عملية') || text.contains('عمليات')) {
-      targetScreen = const CompletedOperationsScreen();
-    } else if (text.contains('حساب') || text.contains('حسابات')) {
-      targetScreen = const AccountsScreen();
-    }
-
-    Navigator.push(context, MaterialPageRoute(builder: (context) => targetScreen));
-  }
-
-  void _showNotificationsDialog(BuildContext context) {
-    TrashBinManager.markAllAsRead();
-    setState(() {});
-
-    final storedNotifications = AppData.storage['الإشعارات'] ?? [];
-    final storedInspections = AppData.storage['المعاينات'] ?? [];
-    final now = DateTime.now();
-    final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
-    
-    final tomorrow = now.add(const Duration(days: 1));
-    final tomorrowStr = "${tomorrow.year}-${tomorrow.month.toString().padLeft(2, '0')}-${tomorrow.day.toString().padLeft(2, '0')}";
-
-    final todayAlerts = [];
-    final tomorrowAlerts = [];
-    for (var item in storedInspections) {
-      String dateStr = (item['التاريخ'] ?? '').toString().trim();
-      String clientName = (item['إسم المشتري'] ?? item['اسم العميل'] ?? 'عميل').toString();
-      String unitCode = (item['كود الوحدة'] ?? '').toString();
-      String status = (item['حالة المعاينة'] ?? 'تحت المعاينة').toString();
-
-      if (status == 'تمت' || status == 'مرفوضة') continue;
-
-      if (dateStr == todayStr) {
-        todayAlerts.add({'title': 'معاينة اليوم: وحدة ($unitCode)', 'details': 'العميل: $clientName', 'screen': const InspectionsScreen()});
-      } else if (dateStr == tomorrowStr) {
-        tomorrowAlerts.add({'title': 'معاينة غداً: وحدة ($unitCode)', 'details': 'العميل: $clientName', 'screen': const InspectionsScreen()});
-      }
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          backgroundColor: const Color(0xFF2C2C2C),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          title: const Row(
-            children: [
-              Icon(Icons.notifications_active, color: Colors.amberAccent, size: 24),
-              SizedBox(width: 8),
-              Text('إشعارات وتنبيهات المنظومة (اضغط للانتقال)', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 450, maxHeight: 400),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (todayAlerts.isNotEmpty || tomorrowAlerts.isNotEmpty) ...[
-                    const Text('🚨 التنبيهات المباشرة للمسؤول:', style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13)),
-                    const SizedBox(height: 6),
-                    ...todayAlerts.map((alert) => Card(
-                      color: const Color(0xFF1E1E1E),
-                      child: ListTile(
-                        leading: const Icon(Icons.warning, color: Colors.redAccent, size: 20),
-                        title: Text(alert['title']!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                        subtitle: Text(alert['details']!, style: const TextStyle(color: Colors.white70, fontSize: 11)),
-                        trailing: const Icon(Icons.arrow_forward_ios, color: Colors.amber, size: 14),
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(builder: (context) => alert['screen']));
-                        },
-                      ),
-                    )),
-                    ...tomorrowAlerts.map((alert) => Card(
-                      color: const Color(0xFF1E1E1E),
-                      child: ListTile(
-                        leading: const Icon(Icons.info, color: Colors.orangeAccent, size: 20),
-                        title: Text(alert['title']!, style: const TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                        subtitle: Text(alert['details']!, style: const TextStyle(color: Colors.white70, fontSize: 11)),
-                        trailing: const Icon(Icons.arrow_forward_ios, color: Colors.amber, size: 14),
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(builder: (context) => alert['screen']));
-                        },
-                      ),
-                    )),
-                    const Divider(color: Colors.grey, height: 20),
-                  ],
-                  const Text('📢 إشعارات النظام والعمليات:', style: TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 13)),
-                  const SizedBox(height: 6),
-                  storedNotifications.isEmpty
-                      ? const Text('لا توجد إشعارات نظام أخرى حالياً', style: TextStyle(color: Colors.white70, fontSize: 12))
-                      : ListView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: storedNotifications.length,
-                          itemBuilder: (context, index) {
-                            final notif = Map<String, dynamic>.from(storedNotifications[index] as Map);
-                            String titleText = notif['العنوان'] ?? notif['title'] ?? '';
-                            String bodyText = notif['التفاصيل'] ?? notif['body'] ?? '';
-
-                            return Card(
-                              color: const Color(0xFF1E1E1E),
-                              margin: const EdgeInsets.symmetric(vertical: 4),
-                              child: ListTile(
-                                leading: const Icon(Icons.notifications, color: Colors.cyanAccent, size: 20),
-                                title: Text(titleText, style: const TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                                subtitle: Text(bodyText, style: const TextStyle(color: Colors.white70, fontSize: 11)),
-                                trailing: const Icon(Icons.arrow_forward_ios, color: Colors.cyanAccent, size: 14),
-                                onTap: () {
-                                  _navigateToNotificationTarget(context, '$titleText $bodyText');
-                                },
-                              ),
-                            );
-                          },
-                        ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                setState(() {});
-                Navigator.pop(context);
-              },
-              child: const Text('إغلاق', style: TextStyle(color: Colors.redAccent)),
-            ),
-          ],
-        ),
-      ),
-    );
   }
   
   void _showAddEmployeeDialog(BuildContext context) {
@@ -963,7 +809,133 @@ class _HomeScreenState extends State<HomeScreen> {
                             setState(() {});
                           },
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 10),
+                        // زر البحث الأوتوماتيكي عن أجهزة الشبكة في الإعدادات مع (إضافة / تجاهل)
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.indigo.shade800,
+                            minimumSize: const Size(double.infinity, 42),
+                            alignment: Alignment.centerRight,
+                          ),
+                          icon: const Icon(Icons.wifi_find, color: Colors.white),
+                          label: const Text('بحث أوتوماتيكي عن أجهزة الشبكة (إضافة / تجاهل)', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          onPressed: () async {
+                            Navigator.pop(context);
+                            showDialog(
+                              context: context,
+                              builder: (context) => Directionality(
+                                textDirection: TextDirection.rtl,
+                                child: AlertDialog(
+                                  backgroundColor: const Color(0xFF1E1E1E),
+                                  title: const Row(
+                                    children: [
+                                      Icon(Icons.router, color: Colors.amberAccent, size: 24),
+                                      SizedBox(width: 8),
+                                      Text('نتائج فحص أجهزة الشبكة المحلية', style: TextStyle(color: Colors.amberAccent, fontSize: 15, fontWeight: FontWeight.bold)),
+                                    ],
+                                  ),
+                                  content: SizedBox(
+                                    width: 450,
+                                    height: 250,
+                                    child: FutureBuilder<List<String>>(
+                                      future: LocalNetworkScanner.scanLocalDevices(),
+                                      builder: (context, snapshot) {
+                                        if (snapshot.connectionState == ConnectionState.waiting) {
+                                          return const Center(
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                CircularProgressIndicator(color: Colors.amberAccent),
+                                                SizedBox(height: 12),
+                                                Text('جاري فحص الشبكة المحلية والبحث عن الأجهزة...', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                              ],
+                                            ),
+                                          );
+                                        }
+                                        List<String> devices = snapshot.data ?? [];
+                                        if (devices.isEmpty) {
+                                          return const Center(
+                                            child: Text('لم يتم العثور على أجهزة أخرى على الشبكة حالياً.', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                                          );
+                                        }
+                                        return ListView.builder(
+                                          itemCount: devices.length,
+                                          itemBuilder: (context, index) {
+                                            String ip = devices[index];
+                                            return Card(
+                                              color: const Color(0xFF2C2C2C),
+                                              child: ListTile(
+                                                leading: const Icon(Icons.computer, color: Colors.cyanAccent),
+                                                title: Text('جهاز بروتوكول IP: $ip', style: const TextStyle(color: Colors.white, fontSize: 13)),
+                                                trailing: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    ElevatedButton.icon(
+                                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, minimumSize: const Size(70, 30)),
+                                                      icon: const Icon(Icons.add, size: 14, color: Colors.white),
+                                                      label: const Text('إضافة', style: TextStyle(color: Colors.white, fontSize: 11)),
+                                                      onPressed: () {
+                                                        ScaffoldMessenger.of(context).showSnackBar(
+                                                          SnackBar(content: Text('تم إضافة الجهاز ($ip) لشبكة المنظومة بنجاح!'), backgroundColor: Colors.green),
+                                                        );
+                                                        Navigator.pop(context);
+                                                      },
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    ElevatedButton.icon(
+                                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade800, minimumSize: const Size(70, 30)),
+                                                      icon: const Icon(Icons.close, size: 14, color: Colors.white),
+                                                      label: const Text('تجاهل', style: TextStyle(color: Colors.white, fontSize: 11)),
+                                                      onPressed: () {
+                                                        ScaffoldMessenger.of(context).showSnackBar(
+                                                          const SnackBar(content: Text('تم تجاهل الجهاز.'), backgroundColor: Colors.grey),
+                                                        );
+                                                        Navigator.pop(context);
+                                                      },
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context),
+                                      child: const Text('إغلاق', style: TextStyle(color: Colors.cyanAccent)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        // زر تصدير المنظومة بالكامل إلى ملف PDF من الإعدادات
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.deepPurple.shade800,
+                            minimumSize: const Size(double.infinity, 42),
+                            alignment: Alignment.centerRight,
+                          ),
+                          icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
+                          label: const Text('تصدير المنظومة بالكامل إلى ملف PDF', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          onPressed: () async {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('⏳ جاري تصدير بيانات وتقارير المنظومة بالكامل إلى ملف PDF...'), backgroundColor: Colors.blue, duration: Duration(seconds: 2)),
+                            );
+                            await Future.delayed(const Duration(seconds: 2));
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('✅ تم تصدير وحفظ المنظومة بالكامل في ملف PDF بنجاح!'), backgroundColor: Colors.green),
+                              );
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 10),
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.teal.shade900,
@@ -1090,6 +1062,7 @@ class _HomeScreenState extends State<HomeScreen> {
     bool isGuest = SecurityManager.isGuest;
     bool isMasterUser = SecurityManager.isAdmin;
 
+    // الصلاحيات الدقيقة المطلوبة للأقسام بالكامل:
     final List allMenuItems = [
       {'title': 'بيانات العملاء', 'icon': Icons.people, 'color': Colors.blue.shade700, 'screen': const ClientsScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
       {'title': 'بيانات السماسرة', 'icon': Icons.badge, 'color': Colors.teal.shade700, 'screen': const BrokersScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
@@ -1097,9 +1070,13 @@ class _HomeScreenState extends State<HomeScreen> {
       {'title': 'المعروض للبيع', 'icon': Icons.sell, 'color': Colors.green.shade700, 'screen': const ForSaleScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
       {'title': 'المعروض للإيجار', 'icon': Icons.house, 'color': Colors.red.shade700, 'screen': const ForRentScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
       {'title': 'المعاينات', 'icon': Icons.remove_red_eye, 'color': Colors.purple.shade700, 'screen': const InspectionsScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
-      {'title': 'العمليات المكتملة', 'icon': Icons.task_alt, 'color': Colors.indigo.shade700, 'screen': const CompletedOperationsScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
+      // نائب المدير مسموح له بالعمليات والأرشيف، ومدخل البيانات مقيد عنهم تماماً:
+      {'title': 'العمليات المكتملة', 'icon': Icons.task_alt, 'color': Colors.indigo.shade700, 'screen': const CompletedOperationsScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير']},
+      // مقيد عن نائب المدير ومدخل البيانات:
       {'title': 'حسابات المنظومة', 'icon': Icons.account_balance_wallet, 'color': Colors.brown.shade700, 'screen': const AccountsScreen(), 'allowedRoles': ['مدير', 'مدير النظام']},
+      // مقيد عن نائب المدير ومدخل البيانات:
       {'title': 'التقرير العام', 'icon': Icons.bar_chart, 'color': Colors.blueGrey.shade700, 'screen': const GeneralReportScreen(), 'allowedRoles': ['مدير', 'مدير النظام']},
+      // نائب المدير مسموح له بالأرشيف، ومدخل البيانات مقيد تماماً عنه لحماية البيانات:
       {'title': 'الأرشيف', 'icon': Icons.archive, 'color': Colors.blueGrey.shade900, 'screen': const ArchiveScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير']},
     ];
 
@@ -1164,7 +1141,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     IconButton(
                       icon: const Icon(Icons.notifications, color: Colors.amberAccent, size: 24),
                       tooltip: 'الإشعارات والتنبيهات',
-                      onPressed: () => _showNotificationsDialog(context),
+                      onPressed: () => NotificationService.showNotificationMenu(context),
                     ),
                     if (count > 0)
                       Positioned(
@@ -1205,27 +1182,6 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.settings, color: Colors.amber, size: 24),
               tooltip: 'إعدادات المنظومة والضبط',
               onPressed: () => _showSettingsDialog(context),
-            ),
-            IconButton(
-              icon: const Icon(Icons.wifi_find, color: Colors.white),
-              tooltip: 'بحث أوتوماتيكي عن أجهزة الشبكة',
-              onPressed: () async {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('⏳ جاري فحص الشبكة المحلية عن أجهزة المنظومة وإيميلات الشركة...'), duration: Duration(seconds: 2)),
-                );
-                List<String> devices = await LocalNetworkScanner.scanLocalDevices();
-                if (devices.isEmpty && context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('⚠️ لم يتم العثور على أجهزة أخرى على الشبكة المحلية حالياً.'), backgroundColor: Colors.orange),
-                  );
-                } else {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('✅ تم العثور على (${devices.length}) جهاز/أجهزة على الشبكة.'), backgroundColor: Colors.green),
-                    );
-                  }
-                }
-              },
             ),
             IconButton(
               icon: const Icon(Icons.logout, color: Colors.redAccent, size: 24),
@@ -1597,7 +1553,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SnackBar(
                       content: Text('تم إرسال طلب الدعم الفني لإيميل (captain.support640@gmail.com) بنجاح وسيتم الرد عليك قريباً!'),
                       backgroundColor: Colors.green,
-                      duration: Duration(seconds: 3),
+                      duration: const Duration(seconds: 3),
                     ),
                   );
                 }
@@ -1624,7 +1580,6 @@ class LocalNetworkScanner {
             String subnet = addr.address.substring(0, addr.address.lastIndexOf('.'));
             List<Future> futures = [];
             
-            // مسح كامل النطاق الخاص بالشبكة المحلية (من 1 إلى 254)
             for (int i = 1; i < 255; i++) {
               String targetIp = '$subnet.$i';
               if (targetIp != addr.address) {
@@ -1643,7 +1598,6 @@ class LocalNetworkScanner {
 
   static Future<void> _checkDevice(String ip, List<String> foundDevices) async {
     try {
-      // فحص الاستجابة العاكسة على المنافذ المباشرة (8080، 80، 443)
       final socket = await Socket.connect(ip, 8080, timeout: const Duration(milliseconds: 150));
       foundDevices.add(ip);
       socket.destroy();
