@@ -128,12 +128,42 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadSettings();
+    _startRealtimeSyncListener();
+  }
+
+  void _startRealtimeSyncListener() {
+    String currentEmail = SecurityManager.currentCompanyAdminEmail.trim();
+    if (currentEmail.isEmpty) {
+      currentEmail = 'captain.support640@gmail.com';
+    }
+    AppStorageManager.listenToMasterDatabase(
+      companyAdminEmail: currentEmail,
+      onDataUpdated: (updatedData) {
+        if (mounted) {
+          setState(() {
+            updatedData.forEach((key, value) {
+              if (value != null) {
+                AppData.storage[key] = value;
+              }
+            });
+          });
+
+          // إرسال شريط تنبيه آلي يفيد باستلام التحديث اللحظي من الجهاز التابع
+          CloudSyncService.notifyDeviceSyncing(
+            context: context,
+            actionUser: SecurityManager.currentUsername.isEmpty ? 'جهاز مرتبط' : SecurityManager.currentUsername,
+            actionRole: SecurityManager.currentUserRole,
+          );
+        }
+      },
+    );
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _searchFocusNode.dispose();
+    AppStorageManager.stopMasterDatabaseListener();
     super.dispose();
   }
 
@@ -357,6 +387,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showNotificationsDialog(BuildContext context) {
+    TrashBinManager.markAllAsRead();
+
     final storedNotifications = AppData.storage['الإشعارات'] ?? [];
     final storedInspections = AppData.storage['المعاينات'] ?? [];
     final now = DateTime.now();
@@ -365,20 +397,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final tomorrow = now.add(const Duration(days: 1));
     final tomorrowStr = "${tomorrow.year}-${tomorrow.month.toString().padLeft(2, '0')}-${tomorrow.day.toString().padLeft(2, '0')}";
 
-    List<String> todayAlerts = [];
-    List<String> tomorrowAlerts = [];
-    List<String> upcomingAlerts = [];
-
-    final weekDaysNames = {
-      1: 'الإثنين',
-      2: 'الثلاثاء',
-      3: 'الأربعاء',
-      4: 'الخميس',
-      5: 'الجمعة',
-      6: 'السبت',
-      7: 'الأحد',
-    };
-
+    final todayAlerts = [];
+    final tomorrowAlerts = [];
     for (var item in storedInspections) {
       String dateStr = (item['التاريخ'] ?? '').toString().trim();
       String clientName = (item['إسم المشتري'] ?? item['اسم العميل'] ?? 'عميل').toString();
@@ -388,17 +408,9 @@ class _HomeScreenState extends State<HomeScreen> {
       if (status == 'تمت' || status == 'مرفوضة') continue;
 
       if (dateStr == todayStr) {
-        todayAlerts.add('• وحدة ($unitCode) مع العميل ($clientName) - اليوم!');
+        todayAlerts.add({'title': 'معاينة اليوم: وحدة ($unitCode)', 'details': 'العميل: $clientName', 'screen': const InspectionsScreen()});
       } else if (dateStr == tomorrowStr) {
-        tomorrowAlerts.add('• وحدة ($unitCode) مع العميل ($clientName) - غداً!');
-      } else {
-        try {
-          DateTime parsedDate = DateTime.parse(dateStr);
-          String dayName = weekDaysNames[parsedDate.weekday] ?? dateStr;
-          if (parsedDate.isAfter(now) && parsedDate.difference(now).inDays <= 7) {
-            upcomingAlerts.add('• يوم $dayName الموافق ($dateStr): وحدة ($unitCode) مع ($clientName)');
-          }
-        } catch (_) {}
+        tomorrowAlerts.add({'title': 'معاينة غداً: وحدة ($unitCode)', 'details': 'العميل: $clientName', 'screen': const InspectionsScreen()});
       }
     }
 
@@ -409,11 +421,11 @@ class _HomeScreenState extends State<HomeScreen> {
         child: AlertDialog(
           backgroundColor: const Color(0xFF2C2C2C),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          title: Row(
-            children: const [
+          title: const Row(
+            children: [
               Icon(Icons.notifications_active, color: Colors.amberAccent, size: 24),
               SizedBox(width: 8),
-              Text('إشعارات وتنبيهات المنظومة', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              Text('إشعارات وتنبيهات المنظومة (اضغط للانتقال)', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
             ],
           ),
           content: ConstrainedBox(
@@ -423,23 +435,35 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (todayAlerts.isNotEmpty || tomorrowAlerts.isNotEmpty || upcomingAlerts.isNotEmpty) ...[
-                    const Text('🚨 تنبيهات المعاينات القادمة:', style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                  if (todayAlerts.isNotEmpty || tomorrowAlerts.isNotEmpty) ...[
+                    const Text('🚨 التنبيهات المباشرة للمسؤول:', style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13)),
                     const SizedBox(height: 6),
-                    if (todayAlerts.isNotEmpty) ...[
-                      const Text('معاينات اليوم:', style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                      ...todayAlerts.map((e) => Padding(padding: const EdgeInsets.only(right: 8, bottom: 2), child: Text(e, style: const TextStyle(color: Colors.white, fontSize: 12)))),
-                      const SizedBox(height: 6),
-                    ],
-                    if (tomorrowAlerts.isNotEmpty) ...[
-                      const Text('معاينات غداً (خلال 24 ساعة):', style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                      ...tomorrowAlerts.map((e) => Padding(padding: const EdgeInsets.only(right: 8, bottom: 2), child: Text(e, style: const TextStyle(color: Colors.white, fontSize: 12)))),
-                      const SizedBox(height: 6),
-                    ],
-                    if (upcomingAlerts.isNotEmpty) ...[
-                      const Text('معاينات الأيام القادمة (السبت، الأحد...):', style: TextStyle(color: Colors.cyanAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                      ...upcomingAlerts.map((e) => Padding(padding: const EdgeInsets.only(right: 8, bottom: 2), child: Text(e, style: const TextStyle(color: Colors.white70, fontSize: 12)))),
-                    ],
+                    ...todayAlerts.map((alert) => Card(
+                      color: const Color(0xFF1E1E1E),
+                      child: ListTile(
+                        leading: const Icon(Icons.warning, color: Colors.redAccent, size: 20),
+                        title: Text(alert['title']!, style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                        subtitle: Text(alert['details']!, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                        trailing: const Icon(Icons.arrow_forward_ios, color: Colors.amber, size: 14),
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(builder: (context) => alert['screen']));
+                        },
+                      ),
+                    )),
+                    ...tomorrowAlerts.map((alert) => Card(
+                      color: const Color(0xFF1E1E1E),
+                      child: ListTile(
+                        leading: const Icon(Icons.info, color: Colors.orangeAccent, size: 20),
+                        title: Text(alert['title']!, style: const TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                        subtitle: Text(alert['details']!, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                        trailing: const Icon(Icons.arrow_forward_ios, color: Colors.amber, size: 14),
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(builder: (context) => alert['screen']));
+                        },
+                      ),
+                    )),
                     const Divider(color: Colors.grey, height: 20),
                   ],
                   const Text('📢 إشعارات النظام والعمليات:', style: TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 13)),
@@ -470,7 +494,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () {
+                setState(() {});
+                Navigator.pop(context);
+              },
               child: const Text('إغلاق', style: TextStyle(color: Colors.redAccent)),
             ),
           ],
@@ -731,11 +758,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
            
-  void _showSettingsDialog(BuildContext context) {
+  void _showSettingsDialog(BuildContext context) async {
     if (SecurityManager.isGuest) {
       SecurityManager.showPermissionDeniedSnackBar(context, 'حساب ضيف: غير مسموح لك بالدخول إلى إعدادات المنظومة والضبط.');
       return;
     }
+
+    // فحص صلاحية الـ 7 أيام للنسخ التجريبية قبل فتح الشاشة
+    bool canAccess = await AppStorageManager.checkSettingsAccessAllowed(context);
+    if (!canAccess) return;
 
     final TextEditingController activationController = TextEditingController();
     final TextEditingController googleDriveEmailController = TextEditingController(text: _personalGmail);
@@ -743,279 +774,282 @@ class _HomeScreenState extends State<HomeScreen> {
     String myDeviceId = "CAPTAIN-PC-2026";
     String hardwareId = LicensingService.getDeviceHardwareId(myDeviceId);
 
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          String currentPhone = SecurityManager.currentUsername;
-          String generatedCompanyServerEmail = '$currentPhone@aqarat.com';
+    if (context.mounted) {
+      showDialog(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            String currentPhone = SecurityManager.currentUsername;
+            String generatedCompanyServerEmail = '$currentPhone@aqarat.com';
 
-          return Directionality(
-            textDirection: TextDirection.rtl,
-            child: AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              backgroundColor: const Color(0xFF1E1E1E),
-              title: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.settings, color: Colors.amber, size: 28),
-                  SizedBox(width: 8),
-                  Text('إعدادات المنظومة والضبط', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18)),
-                ],
-              ),
-              content: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 460),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextField(
-                        controller: googleDriveEmailController,
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
-                        decoration: InputDecoration(
-                          labelText: 'إيميل Google Drive الشخصي (للنسخ والرفع والسيرفر)',
-                          labelStyle: const TextStyle(color: Colors.amberAccent, fontSize: 11),
-                          prefixIcon: const Icon(Icons.cloud_sync, color: Colors.amberAccent, size: 20),
-                          filled: true,
-                          fillColor: const Color(0xFF141414),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            return Directionality(
+              textDirection: TextDirection.rtl,
+              child: AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                backgroundColor: const Color(0xFF1E1E1E),
+                title: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.settings, color: Colors.amber, size: 28),
+                    SizedBox(width: 8),
+                    Text('إعدادات المنظومة والضبط', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18)),
+                  ],
+                ),
+                content: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 460),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextField(
+                          controller: googleDriveEmailController,
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                          decoration: InputDecoration(
+                            labelText: 'إيميل Google Drive الشخصي (للنسخ والرفع والسيرفر)',
+                            labelStyle: const TextStyle(color: Colors.amberAccent, fontSize: 11),
+                            prefixIcon: const Icon(Icons.cloud_sync, color: Colors.amberAccent, size: 20),
+                            filled: true,
+                            fillColor: const Color(0xFF141414),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          ),
+                          onChanged: (val) async {
+                            setDialogState(() {
+                              _personalGmail = val.trim();
+                            });
+                            setState(() {
+                              _personalGmail = val.trim();
+                            });
+                            await LocalStorageService.savePersonalGmail(val.trim());
+                          },
                         ),
-                        onChanged: (val) async {
-                          setDialogState(() {
-                            _personalGmail = val.trim();
-                          });
-                          setState(() {
-                            _personalGmail = val.trim();
-                          });
-                          await LocalStorageService.savePersonalGmail(val.trim());
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF252525),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.cyanAccent.withOpacity(0.4)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.admin_panel_settings, color: Colors.cyanAccent, size: 22),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'إيميل الشركة الموحد: $generatedCompanyServerEmail',
-                                style: const TextStyle(color: Colors.cyanAccent, fontSize: 12, fontWeight: FontWeight.bold),
-                                overflow: TextOverflow.ellipsis,
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF252525),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.4)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.admin_panel_settings, color: Colors.cyanAccent, size: 22),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'إيميل الشركة الموحد: $generatedCompanyServerEmail',
+                                  style: const TextStyle(color: Colors.cyanAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Divider(color: Colors.grey),
-                      const SizedBox(height: 8),
-                      const Text('جدولة النسخ الاحتياطي التلقائي:', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13)),
-                      const SizedBox(height: 6),
-                      DropdownButtonFormField<String>(
-                        value: ['يومياً', 'أسبوعياً', 'شهرياً', 'يدوياً'].contains(_selectedBackupFrequency)
-                            ? _selectedBackupFrequency
-                            : 'يدوياً',
-                        dropdownColor: const Color(0xFF2C2C2C),
-                        style: const TextStyle(color: Colors.white, fontSize: 13),
-                        decoration: InputDecoration(
-                          filled: true,
-                          fillColor: const Color(0xFF141414),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        const SizedBox(height: 12),
+                        const Divider(color: Colors.grey),
+                        const SizedBox(height: 8),
+                        const Text('جدولة النسخ الاحتياطي التلقائي:', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13)),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          value: ['يومياً', 'أسبوعياً', 'شهرياً', 'يدوياً'].contains(_selectedBackupFrequency)
+                              ? _selectedBackupFrequency
+                              : 'يدوياً',
+                          dropdownColor: const Color(0xFF2C2C2C),
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: const Color(0xFF141414),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          ),
+                          items: ['يومياً', 'أسبوعياً', 'شهرياً', 'يدوياً'].map((freq) {
+                            return DropdownMenuItem(value: freq, child: Text(freq));
+                          }).toList(),
+                          onChanged: (val) async {
+                            if (val != null) {
+                              setDialogState(() => _selectedBackupFrequency = val);
+                              setState(() => _selectedBackupFrequency = val);
+                              await LocalStorageService.setBackupFrequency(val);
+                            }
+                          },
                         ),
-                        items: ['يومياً', 'أسبوعياً', 'شهرياً', 'يدوياً'].map((freq) {
-                          return DropdownMenuItem(value: freq, child: Text(freq));
-                        }).toList(),
-                        onChanged: (val) async {
-                          if (val != null) {
-                            setDialogState(() => _selectedBackupFrequency = val);
-                            setState(() => _selectedBackupFrequency = val);
-                            await LocalStorageService.setBackupFrequency(val);
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 14),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red.shade900,
-                          minimumSize: const Size(double.infinity, 42),
-                          alignment: Alignment.centerRight,
+                        const SizedBox(height: 14),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red.shade900,
+                            minimumSize: const Size(double.infinity, 42),
+                            alignment: Alignment.centerRight,
+                          ),
+                          icon: const Icon(Icons.delete_sweep, color: Colors.white),
+                          label: const Text('🗑️ سلة المهملات (المحذوفات واسترجاعها)', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _showTrashBinDialog(context);
+                          },
                         ),
-                        icon: const Icon(Icons.delete_sweep, color: Colors.white),
-                        label: const Text('🗑️ سلة المهملات (المحذوفات واسترجاعها)', style: TextStyle(color: Colors.white, fontSize: 13)),
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _showTrashBinDialog(context);
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue.shade800,
-                          minimumSize: const Size(double.infinity, 42),
-                          alignment: Alignment.centerRight,
+                        const SizedBox(height: 10),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue.shade800,
+                            minimumSize: const Size(double.infinity, 42),
+                            alignment: Alignment.centerRight,
+                          ),
+                          icon: const Icon(Icons.cloud_upload, color: Colors.white),
+                          label: const Text('المزامنة السحابية اللحظية (Firebase)', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          onPressed: () async {
+                            await CloudSyncService.performCloudSync(context);
+                          },
                         ),
-                        icon: const Icon(Icons.cloud_upload, color: Colors.white),
-                        label: const Text('المزامنة السحابية اللحظية (Firebase)', style: TextStyle(color: Colors.white, fontSize: 13)),
-                        onPressed: () async {
-                          await CloudSyncService.performCloudSync(context);
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.grey.shade800,
-                          minimumSize: const Size(double.infinity, 42),
-                          alignment: Alignment.centerRight,
+                        const SizedBox(height: 10),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey.shade800,
+                            minimumSize: const Size(double.infinity, 42),
+                            alignment: Alignment.centerRight,
+                          ),
+                          icon: const Icon(Icons.backup, color: Colors.white),
+                          label: const Text('نسخ احتياطي محلي + تصدير ملف', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          onPressed: () async {
+                            await FileBackupService.backupToFile(context);
+                          },
                         ),
-                        icon: const Icon(Icons.backup, color: Colors.white),
-                        label: const Text('نسخ احتياطي محلي + تصدير ملف', style: TextStyle(color: Colors.white, fontSize: 13)),
-                        onPressed: () async {
-                          await FileBackupService.backupToFile(context);
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange.shade800,
-                          minimumSize: const Size(double.infinity, 42),
-                          alignment: Alignment.centerRight,
+                        const SizedBox(height: 10),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange.shade800,
+                            minimumSize: const Size(double.infinity, 42),
+                            alignment: Alignment.centerRight,
+                          ),
+                          icon: const Icon(Icons.restore, color: Colors.white),
+                          label: const Text('استعادة البيانات من ملف', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          onPressed: () async {
+                            await FileBackupService.restoreFromFile(context);
+                            await CloudSyncService.saveAndSyncInstant();
+                            setState(() {});
+                          },
                         ),
-                        icon: const Icon(Icons.restore, color: Colors.white),
-                        label: const Text('استعادة البيانات من ملف', style: TextStyle(color: Colors.white, fontSize: 13)),
-                        onPressed: () async {
-                          await FileBackupService.restoreFromFile(context);
-                          await CloudSyncService.saveAndSyncInstant();
-                          setState(() {});
-                        },
-                      ),
-                      const SizedBox(height: 14),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.teal.shade900,
-                          minimumSize: const Size(double.infinity, 42),
-                          alignment: Alignment.centerRight,
+                        const SizedBox(height: 14),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.teal.shade900,
+                            minimumSize: const Size(double.infinity, 42),
+                            alignment: Alignment.centerRight,
+                          ),
+                          icon: const Icon(Icons.admin_panel_settings, color: Colors.greenAccent),
+                          label: const Text('🛠️ لوحة تحكم الدعم الفني (التحكم عن بُعد)', style: TextStyle(color: Colors.greenAccent, fontSize: 13, fontWeight: FontWeight.bold)),
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _showRemoteSupportDialog(context);
+                          },
                         ),
-                        icon: const Icon(Icons.admin_panel_settings, color: Colors.greenAccent),
-                        label: const Text('🛠️ لوحة تحكم الدعم الفني (التحكم عن بُعد)', style: TextStyle(color: Colors.greenAccent, fontSize: 13, fontWeight: FontWeight.bold)),
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _showRemoteSupportDialog(context);
-                        },
-                      ),
-                      const SizedBox(height: 14),
-                      const Divider(color: Colors.grey),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF282828),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.amber.withOpacity(0.4)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('حالة التراخيص والتشغيل:', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13)),
-                            const SizedBox(height: 6),
-                            Text(
-                              LicensingService.isMasterAdmin || LicensingService.isActivated
-                                  ? 'التفعيل: مدى الحياة'
-                                  : LicensingService.activationType,
-                              style: TextStyle(color: LicensingService.isMasterAdmin || LicensingService.isActivated ? Colors.greenAccent : Colors.cyanAccent, fontSize: 13),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                const Text('كود الجهاز: ', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                                Expanded(
-                                  child: Text(
-                                    hardwareId,
-                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                        const SizedBox(height: 14),
+                        const Divider(color: Colors.grey),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF282828),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.amber.withOpacity(0.4)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('حالة التراخيص والتشغيل:', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13)),
+                              const SizedBox(height: 6),
+                              Text(
+                                LicensingService.isMasterAdmin || LicensingService.isActivated
+                                    ? 'التفعيل: مدى الحياة'
+                                    : LicensingService.activationType,
+                                style: TextStyle(color: LicensingService.isMasterAdmin || LicensingService.isActivated ? Colors.greenAccent : Colors.cyanAccent, fontSize: 13),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  const Text('كود الجهاز: ', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                  Expanded(
+                                    child: Text(
+                                      hardwareId,
+                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                                    ),
                                   ),
+                                  IconButton(
+                                    icon: const Icon(Icons.copy, color: Colors.amber, size: 18),
+                                    tooltip: 'نسخ كود الجهاز',
+                                    onPressed: () {
+                                      Clipboard.setData(ClipboardData(text: hardwareId));
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('تم نسخ كود الجهاز بنجاح!'), backgroundColor: Colors.blue, duration: Duration(seconds: 2)),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              TextField(
+                                controller: activationController,
+                                style: const TextStyle(color: Colors.white, fontSize: 12),
+                                decoration: InputDecoration(
+                                  labelText: 'أدخل كود التفعيل أو التمديد',
+                                  labelStyle: const TextStyle(color: Colors.white60, fontSize: 11),
+                                  filled: true,
+                                  fillColor: const Color(0xFF141414),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                 ),
-                                IconButton(
-                                  icon: const Icon(Icons.copy, color: Colors.amber, size: 18),
-                                  tooltip: 'نسخ كود الجهاز',
-                                  onPressed: () {
-                                    Clipboard.setData(ClipboardData(text: hardwareId));
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('تم نسخ كود الجهاز بنجاح!'), backgroundColor: Colors.blue, duration: Duration(seconds: 2)),
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade700),
+                                  onPressed: () async {
+                                    bool success = await LicensingService.processActivationCode(
+                                      inputCode: activationController.text,
+                                      deviceId: myDeviceId,
                                     );
+                                    if (success) {
+                                      setDialogState(() {});
+                                      setState(() {});
+                                      if (context.mounted) {
+                                        Navigator.pop(context);
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('تم تنشيط وترخيص المنظومة بنجاح!'), backgroundColor: Colors.green),
+                                        );
+                                      }
+                                    } else {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('كود التفعيل غير صحيح أو تم استهلاكه مسبقاً!'), backgroundColor: Colors.red),
+                                        );
+                                      }
+                                    }
                                   },
+                                  child: const Text('تنشيط وترخيص النظام', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 12)),
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            TextField(
-                              controller: activationController,
-                              style: const TextStyle(color: Colors.white, fontSize: 12),
-                              decoration: InputDecoration(
-                                labelText: 'أدخل كود التفعيل أو التمديد',
-                                labelStyle: const TextStyle(color: Colors.white60, fontSize: 11),
-                                filled: true,
-                                fillColor: const Color(0xFF141414),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade700),
-                                onPressed: () async {
-                                  bool success = await LicensingService.processActivationCode(
-                                    inputCode: activationController.text,
-                                    deviceId: myDeviceId,
-                                  );
-                                  if (success) {
-                                    setDialogState(() {});
-                                    setState(() {});
-                                    if (context.mounted) {
-                                      Navigator.pop(context);
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('تم تنشيط وترخيص المنظومة بنجاح!'), backgroundColor: Colors.green),
-                                      );
-                                    }
-                                  } else {
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('كود التفعيل غير صحيح أو تم استهلاكه مسبقاً!'), backgroundColor: Colors.red),
-                                      );
-                                    }
-                                  }
-                                },
-                                child: const Text('تنشيط وترخيص النظام', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 12)),
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('إغلاق', style: TextStyle(color: Colors.redAccent, fontSize: 14)),
+                  ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('إغلاق', style: TextStyle(color: Colors.redAccent, fontSize: 14)),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
+            );
+          },
+        ),
+      );
+    }
   }
+
   @override
   Widget build(BuildContext context) {
     String currentRole = SecurityManager.currentUserRole;
@@ -1041,7 +1075,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return allowed.contains(currentRole);
     }).toList();
 
-    int notifCount = (AppData.storage['الإشعارات'] ?? []).length;
+    int unreadNotifCount = TrashBinManager.unreadCount;
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -1085,33 +1119,40 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            Stack(
-              alignment: Alignment.topRight,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.notifications, color: Colors.amberAccent, size: 24),
-                  tooltip: 'الإشعارات والتنبيهات',
-                  onPressed: () => _showNotificationsDialog(context),
-                ),
-                if (notifCount > 0)
-                  Positioned(
-                    right: 6,
-                    top: 6,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
-                      child: Text(
-                        '$notifCount',
-                        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                        textAlign: TextAlign.center,
-                      ),
+            StreamBuilder<int>(
+              stream: TrashBinManager.onNotificationsChanged,
+              initialData: unreadNotifCount,
+              builder: (context, snapshot) {
+                int count = snapshot.data ?? unreadNotifCount;
+                return Stack(
+                  alignment: Alignment.topRight,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.notifications, color: Colors.amberAccent, size: 24),
+                      tooltip: 'الإشعارات والتنبيهات',
+                      onPressed: () => _showNotificationsDialog(context),
                     ),
-                  ),
-              ],
+                    if (count > 0)
+                      Positioned(
+                        right: 6,
+                        top: 6,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                          child: Text(
+                            '$count',
+                            style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
             if (!isGuest && isMasterUser)
               IconButton(
@@ -1131,32 +1172,27 @@ class _HomeScreenState extends State<HomeScreen> {
               tooltip: 'إعدادات المنظومة والضبط',
               onPressed: () => _showSettingsDialog(context),
             ),
-            ElevatedButton.icon(
-  style: ElevatedButton.styleFrom(
-    backgroundColor: Colors.indigo.shade700,
-    minimumSize: const Size(double.infinity, 42),
-    alignment: Alignment.centerRight,
-  ),
-  icon: const Icon(Icons.wifi_find, color: Colors.white),
-  label: const Text('بحث أوتوماتيكي عن أجهزة الشبكة ودومين الشركة', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-  onPressed: () async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('⏳ جاري فحص الشبكة المحلية عن أجهزة المنظومة وإيميلات الشركة...'), duration: Duration(seconds: 2)),
-    );
-    List<String> devices = await LocalNetworkScanner.scanLocalDevices();
-    if (devices.isEmpty && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('⚠️ لم يتم العثور على أجهزة أخرى على الشبكة المحلية حالياً.'), backgroundColor: Colors.orange),
-      );
-    } else {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('✅ تم العثور على (${devices.length}) جهاز/أجهزة على الشبكة.'), backgroundColor: Colors.green),
-        );
-      }
-    }
-  },
-),
+            IconButton(
+              icon: const Icon(Icons.wifi_find, color: Colors.white),
+              tooltip: 'بحث أوتوماتيكي عن أجهزة الشبكة',
+              onPressed: () async {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('⏳ جاري فحص الشبكة المحلية عن أجهزة المنظومة وإيميلات الشركة...'), duration: Duration(seconds: 2)),
+                );
+                List<String> devices = await LocalNetworkScanner.scanLocalDevices();
+                if (devices.isEmpty && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('⚠️ لم يتم العثور على أجهزة أخرى على الشبكة المحلية حالياً.'), backgroundColor: Colors.orange),
+                  );
+                } else {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('✅ تم العثور على (${devices.length}) جهاز/أجهزة على الشبكة.'), backgroundColor: Colors.green),
+                    );
+                  }
+                }
+              },
+            ),
             IconButton(
               icon: const Icon(Icons.logout, color: Colors.redAccent, size: 24),
               tooltip: 'تسجيل الخروج',
@@ -1543,6 +1579,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
 class LocalNetworkScanner {
   static Future<List<String>> scanLocalDevices() async {
     List<String> foundDevices = [];

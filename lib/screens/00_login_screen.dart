@@ -109,8 +109,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (authenticated) {
         final prefs = await SharedPreferences.getInstance();
-        String savedUsername = prefs.getString('saved_username') ?? '';
-        String savedPassword = prefs.getString('saved_password') ?? '';
+        String savedUsername = prefs.getString('saved_username') ?? _usernameController.text.trim();
+        String savedPassword = prefs.getString('saved_password') ?? _passwordController.text.trim();
 
         if (savedUsername.isNotEmpty && savedPassword.isNotEmpty) {
           _usernameController.text = savedUsername;
@@ -119,19 +119,35 @@ class _LoginScreenState extends State<LoginScreen> {
         } else {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('⚠️ لا توجد بيانات مسجلة مسبقاً، يرجى الدخول برقم الموبايل وكلمة السر أول مرة.'), backgroundColor: Colors.orange),
+              const SnackBar(
+                content: Text('⚠️ لا توجد بيانات مسجلة مسبقاً، يرجى الدخول برقم الموبايل وكلمة السر أول مرة.'),
+                backgroundColor: Colors.orange,
+              ),
             );
           }
         }
       }
-    } catch (e) {
+    } on PlatformException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر الدخول بالبصمة: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('تنبيه البصمة: يرجى التأكد من تفعيل البصمة في إعدادات الهاتف (${e.message})'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر تسجيل الدخول بالبصمة حالياً، يرجى استخدام كلمة السر.'),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
     }
-  }  
+  }
+    
   @override
   void dispose() {
     _usernameController.dispose();

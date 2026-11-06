@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/licensing_service.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -64,6 +65,10 @@ class AboutScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // التحقق من أن التفعيل إما سنوي أو مدى الحياة
+    bool isFullVersion = LicensingService.isActivated &&
+        (LicensingService.activationType == 'سنوي' || LicensingService.activationType == 'مدى الحياة');
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -117,44 +122,70 @@ class AboutScreen extends StatelessWidget {
                         ),
                       ),
                       const Divider(height: 25, color: Colors.grey),
-                      const Text(
-                        'للتواصل والدعم الفني والترخيص:',
-                        style: TextStyle(fontSize: 13, color: Colors.white70),
-                      ),
-                      const SizedBox(height: 10),
-                      // رقم التليفون
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          Icon(Icons.phone, color: Colors.greenAccent, size: 20),
-                          SizedBox(width: 8),
-                          SelectableText(
-                            '01200626469',
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.greenAccent,
+                      
+                      // إظهار التنبيه أو أرقام الدعم بناءً على نوع التفعيل
+                      if (isFullVersion) ...[
+                        const Text(
+                          'للتواصل والدعم الفني والترخيص:',
+                          style: TextStyle(fontSize: 13, color: Colors.white70),
+                        ),
+                        const SizedBox(height: 10),
+                        // رقم التليفون
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(Icons.phone, color: Colors.greenAccent, size: 20),
+                            SizedBox(width: 8),
+                            SelectableText(
+                              '01200626469',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.greenAccent,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      // إيميل الدعم الفني الرئيسي
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          Icon(Icons.email, color: Colors.cyanAccent, size: 20),
-                          SizedBox(width: 8),
-                          SelectableText(
-                            'captain.support640@gmail.com',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.cyanAccent,
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        // إيميل الدعم الفني الرئيسي
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(Icons.email, color: Colors.cyanAccent, size: 20),
+                            SizedBox(width: 8),
+                            SelectableText(
+                              'captain.support640@gmail.com',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.cyanAccent,
+                              ),
                             ),
+                          ],
+                        ),
+                      ] else ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.amber.withOpacity(0.6)),
                           ),
-                        ],
-                      ),
+                          child: Row(
+                            children: const [
+                              Icon(Icons.lock_clock, color: Colors.amber, size: 28),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  '⚠️ وسائل التواصل مع الدعم الفني متاحة فقط للنسخ المفعلة (اشتراك سنوي أو مدى الحياة).',
+                                  style: TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold, height: 1.3),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:http/http.dart' as http;
 import 'services/local_storage_service.dart';
+import 'services/licensing_service.dart';
 
 class AppStorageManager {
   static const String _dbUrl = "https://aqarat-captain-default-rtdb.firebaseio.com";
@@ -12,6 +14,62 @@ class AppStorageManager {
   static String currentUsername = '';
   static String currentEmail = '';
   static StreamSubscription<DatabaseEvent>? _masterDatabaseSubscription;
+
+  /// فحص صلاحية الوصول لإعدادات المنظومة والضبط (مهلة 7 أيام للنسخة التجريبية)
+  static Future<bool> checkSettingsAccessAllowed(BuildContext context) async {
+    // 1. إذا كانت النسخة مفعلة (سنوي أو مدى الحياة) يفتح فورا بدون قيود
+    if (LicensingService.isActivated && 
+       (LicensingService.activationType == 'سنوي' || LicensingService.activationType == 'مدى الحياة')) {
+      return true;
+    }
+
+    // 2. في حالة النسخة التجريبية: حساب عدد الأيام منذ التثبيت الأول
+    final prefs = await SharedPreferences.getInstance();
+    String? installDateStr = prefs.getString('first_install_date');
+    
+    if (installDateStr == null) {
+      installDateStr = DateTime.now().toIso8601String();
+      await prefs.setString('first_install_date', installDateStr);
+    }
+
+    DateTime installDate = DateTime.parse(installDateStr);
+    int daysUsed = DateTime.now().difference(installDate).inDays;
+
+    // 3. إذا تجاوزت الفترة التجريبية 7 أيام، تتقفل مميزات الإعدادات والضبط
+    if (daysUsed >= 7) {
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              backgroundColor: const Color(0xFF2C2C2C),
+              title: const Row(
+                children: [
+                  Icon(Icons.lock_clock, color: Colors.amberAccent),
+                  SizedBox(width: 8),
+                  Text('إعدادات المنظومة مغلقة', style: TextStyle(color: Colors.amberAccent, fontSize: 16)),
+                ],
+              ),
+              content: const Text(
+                'انتهت مهلة الـ 7 أيام التجريبية الخاصة بإعدادات المنظومة والمزامنة والنسخ الاحتياطي وسلة المهملات.\n\nيرجى التفعيل (سنوي أو مدى الحياة) لفتح أدوات الضبط والتحكم.',
+                style: TextStyle(color: Colors.white, height: 1.4),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('حسناً، فهمت', style: TextStyle(color: Colors.cyanAccent)),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+      return false;
+    }
+
+    return true; // ما زال في مهلة الـ 7 أيام التجريبية
+  }
 
   /// فحص هل البيئة تعمل برست API (على الويب أو الويندوز لمنع MissingPluginException)
   static bool get _useRestApi => kIsWeb || defaultTargetPlatform == TargetPlatform.windows;
@@ -171,7 +229,6 @@ class AppStorageManager {
   }) async {
     if (companyAdminEmail.isEmpty) return;
 
-    // جلب البيانات فوراً لمنع التأخير
     dynamic initialData = await fetchMasterDatabase(companyAdminEmail);
     if (initialData != null && initialData is Map) {
       try {
@@ -180,7 +237,7 @@ class AppStorageManager {
       } catch (_) {}
     }
 
-    if (_useRestApi) return; // الاعتماد على السحب المباشر في بيئة REST API لمنع أخطاء البلاغين
+    if (_useRestApi) return;
 
     _masterDatabaseSubscription?.cancel();
 
@@ -207,7 +264,6 @@ class AppStorageManager {
     _masterDatabaseSubscription = null;
   }
 
-  /// تسجيل الموظف أوتوماتيكياً في فرع الحسابات وشجرة الإدارة مع الصلاحية وكلمة المرور ورقم التليفون
   static Future<void> registerEmployeeInTree({
     required String companyAdminEmail,
     required String employeePhone,
@@ -248,7 +304,6 @@ class AppStorageManager {
     } catch (_) {}
   }
 
-  /// حذف الموظف نهائياً من شجرة الإدارة بالسحابة لإلغاء صلاحية دخوله المنظومة
   static Future<bool> deleteEmployeeFromTree({
     required String companyAdminEmail,
     required String employeePhone,

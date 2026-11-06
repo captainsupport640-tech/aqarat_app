@@ -10,7 +10,6 @@ import 'security_manager.dart';
 import 'google_drive_service.dart';
 
 class CloudSyncService {
-
   static const String _dbUrl = "https://aqarat-captain-default-rtdb.firebaseio.com";
   static StreamSubscription? _realtimeSubscription;
   static Timer? _restPollingTimer;
@@ -42,7 +41,7 @@ class CloudSyncService {
     return email.toLowerCase().replaceAll('.', '_').replaceAll('@', '_at_');
   }
 
-  /// 1️⃣ المزامنة التلقائية اللحظية "رايح جاي" عند حدوث أي تغيير في السحابة
+  /// 1️⃣ المزامنة التلقائية اللحظية "رايح جاي" بين الموبايل والكمبيوتر
   static Future<void> startAutoSyncListener(Function() onDataUpdated) async {
     try {
       _realtimeSubscription?.cancel();
@@ -62,7 +61,7 @@ class CloudSyncService {
           }
         });
       } else {
-        // فحص دوري سريع كالموجات المباشرة لنسخة الويندوز والويب لتنفيذ الاستماع اللحظي رايح جاي
+        // فحص دوري فورس وسريع بين الأجهزة لضمان عدم وجود أي تأخير في الاستماع
         _restPollingTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
           await _fetchRemoteDataSilently(onUpdated: onDataUpdated);
         });
@@ -252,5 +251,45 @@ class CloudSyncService {
   static Future<void> saveAndSyncInstant() async {
     await LocalStorageService.saveLocally();
     await syncToCloud(isAuto: true);
+  }
+
+  /// إرسال إشعار لحظي لجميع الأجهزة بالتعديل القادم وطابور الدور
+  static Future<void> notifyDeviceSyncing({
+    required BuildContext context,
+    required String actionUser,
+    required String actionRole,
+  }) async {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          elevation: 6,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.only(bottom: 20, left: 15, right: 15),
+          backgroundColor: const Color(0xFF1E1E1E),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: Colors.cyanAccent, width: 1.5),
+          ),
+          duration: const Duration(seconds: 3),
+          content: Row(
+            children: [
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.cyanAccent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '🔄 جاري استلام ومزامنة تعديل جديد بواسطة: $actionUser ($actionRole)',
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
   }
 }
