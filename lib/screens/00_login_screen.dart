@@ -103,19 +103,26 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _authenticateWithBiometrics() async {
     try {
-      dynamic dynamicAuth = auth;
-      bool authenticated = await dynamicAuth.authenticate(
+      bool authenticated = await auth.authenticate(
         localizedReason: 'الرجاء إثبات البصمة لتسجيل الدخول السريع للمنظومة',
       );
 
       if (authenticated) {
         final prefs = await SharedPreferences.getInstance();
-        String savedUsername = prefs.getString('saved_username') ?? '01200626469';
-        String savedPassword = prefs.getString('saved_password') ?? '1983';
+        String savedUsername = prefs.getString('saved_username') ?? '';
+        String savedPassword = prefs.getString('saved_password') ?? '';
 
-        _usernameController.text = savedUsername;
-        _passwordController.text = savedPassword;
-        _login();
+        if (savedUsername.isNotEmpty && savedPassword.isNotEmpty) {
+          _usernameController.text = savedUsername;
+          _passwordController.text = savedPassword;
+          _login();
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('⚠️ لا توجد بيانات مسجلة مسبقاً، يرجى الدخول برقم الموبايل وكلمة السر أول مرة.'), backgroundColor: Colors.orange),
+            );
+          }
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -124,8 +131,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     }
-  }
-  
+  }  
   @override
   void dispose() {
     _usernameController.dispose();
@@ -150,14 +156,16 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     final prefs = await SharedPreferences.getInstance();
+    bool remember = prefs.getBool('remember_me') ?? true;
     String savedUsername = prefs.getString('saved_username') ?? '';
     String savedPassword = prefs.getString('saved_password') ?? '';
-    bool remember = prefs.getBool('remember_me') ?? true;
 
     setState(() {
       _rememberMe = remember;
-      _usernameController.text = savedUsername;
-      _passwordController.text = savedPassword;
+      if (remember) {
+        _usernameController.text = savedUsername;
+        _passwordController.text = savedPassword;
+      }
     });
   }
 
@@ -306,16 +314,22 @@ class _LoginScreenState extends State<LoginScreen> {
   void _executeSuccessfulLogin(String username, String gmail, {bool isGuest = false, bool isMasterAdmin = false}) async {
     final prefs = await SharedPreferences.getInstance();
 
+    // حفظ حالة الـ Remember Me بدقة حسب اختيار المستخدم الفعلي
+    await prefs.setBool('remember_me', _rememberMe);
+
     if (!isGuest && gmail.isNotEmpty) {
       await LocalStorageService.loginWithEmail(gmail);
       await LocalStorageService.savePersonalGmail(gmail);
     }
 
-    await prefs.setBool('remember_me', true);
-    if (!isGuest) {
+    // إذا كان المربع محدداً، يتم حفظ بيانات الدخول والبصمة، وإذا أُلغي يتم تفريغها
+    if (_rememberMe && !isGuest) {
       await prefs.setString('saved_gmail', gmail);
       await prefs.setString('saved_username', username);
       await prefs.setString('saved_password', _passwordController.text.trim());
+    } else {
+      await prefs.remove('saved_username');
+      await prefs.remove('saved_password');
     }
 
     String fName = isGuest ? 'زائر (تصفح فقط)' : (LoginScreen.appUsers[username]?['firstName'] ?? 'المدير');

@@ -27,7 +27,7 @@ class NotificationItem {
 
 class NotificationService {
   
-  /// جلب قائمة المعرّفات المقروءة بشكل مضمون
+  /// جلب قائمة المعرّفات المقروءة بشكل مضمون وموحّد
   static List<String> _getReadIds() {
     if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
       AppData.storage['read_notifications'] = <String>[];
@@ -36,24 +36,24 @@ class NotificationService {
     return rawList.map((e) => e.toString()).toList();
   }
 
-  /// جلب عدد الإشعارات غير المقروءة فقط للعداد الخارجي (الجرس)
+  /// جلب عدد الإشعارات غير المقروءة فقط للعداد الخارجي (الجرس) بدقة تامة
   static int get unreadCount {
     List<NotificationItem> activeUnread = getAllActiveNotifications(unreadOnly: true);
     return activeUnread.length;
   }
 
-  /// جلب جميع التنبيهات النشطة غير المقروءة فقط أو إجمالي التنبيهات
+  /// جلب جميع التنبيهات النشطة وربطها بالملفات الداخلية بشكل مباشر
   static List<NotificationItem> getAllActiveNotifications({bool unreadOnly = false}) {
     List<NotificationItem> notifications = [];
     List<String> readIds = _getReadIds();
 
-    // 1️⃣ تنبيهات شاشة طلبات العملاء (العقارات المطابقة المتاحة للطلبات)
+    // 1️⃣ تنبيهات شاشة طلبات العملاء من البيانات الداخلية الفعلية
     _extractCustomerRequestNotifications(notifications, readIds);
 
-    // 2️⃣ تنبيهات شاشة المعاينات (المعاينات الشغالة والمعلقة)
+    // 2️⃣ تنبيهات شاشة المعاينات من الملفات الداخلية الفعلية
     _extractInspectionNotifications(notifications, readIds);
 
-    // 3️⃣ تنبيهات شاشة الحسابات والتذكيرات المالية (الإيجارات والفواتير والالتزامات)
+    // 3️⃣ تنبيهات شاشة الحسابات والتذكيرات المالية الفعلية
     _extractAccountReminderNotifications(notifications, readIds);
 
     if (unreadOnly) {
@@ -178,11 +178,11 @@ class NotificationService {
     if (!readList.contains(id)) {
       readList.add(id);
       await LocalStorageService.saveLocally();
-      CloudSyncService.syncToCloud(isAuto: true);
+      await CloudSyncService.syncToCloud(isAuto: true);
     }
   }
 
-  /// تعيين كافة الإشعارات كمقروءة وحفظها سحابياً ومحلياً
+  /// تعيين كافة الإشعارات الظاهرة كمقروءة وربطها بالشاشات والملفات بشكل جذري
   static Future<void> markAllAsRead() async {
     List<NotificationItem> items = getAllActiveNotifications();
     if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
@@ -195,7 +195,7 @@ class NotificationService {
       }
     }
     await LocalStorageService.saveLocally();
-    CloudSyncService.syncToCloud(isAuto: true);
+    await CloudSyncService.syncToCloud(isAuto: true);
   }
 
   /// عرض قائمة الإشعارات غير المقروءة فقط وتحديث القائمة فوراً عند الضغط

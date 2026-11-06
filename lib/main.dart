@@ -2,6 +2,8 @@
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'app_data.dart';
 import 'services/licensing_service.dart';
@@ -21,7 +23,6 @@ import 'screens/08_accounts_screen.dart';
 import 'screens/09_general_report_screen.dart';
 import 'screens/10_archive_screen.dart';
 import 'screens/about_screen.dart';
-import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'app_storage_manager.dart';
 
@@ -1130,6 +1131,32 @@ class _HomeScreenState extends State<HomeScreen> {
               tooltip: 'إعدادات المنظومة والضبط',
               onPressed: () => _showSettingsDialog(context),
             ),
+            ElevatedButton.icon(
+  style: ElevatedButton.styleFrom(
+    backgroundColor: Colors.indigo.shade700,
+    minimumSize: const Size(double.infinity, 42),
+    alignment: Alignment.centerRight,
+  ),
+  icon: const Icon(Icons.wifi_find, color: Colors.white),
+  label: const Text('بحث أوتوماتيكي عن أجهزة الشبكة ودومين الشركة', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+  onPressed: () async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('⏳ جاري فحص الشبكة المحلية عن أجهزة المنظومة وإيميلات الشركة...'), duration: Duration(seconds: 2)),
+    );
+    List<String> devices = await LocalNetworkScanner.scanLocalDevices();
+    if (devices.isEmpty && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('⚠️ لم يتم العثور على أجهزة أخرى على الشبكة المحلية حالياً.'), backgroundColor: Colors.orange),
+      );
+    } else {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('✅ تم العثور على (${devices.length}) جهاز/أجهزة على الشبكة.'), backgroundColor: Colors.green),
+        );
+      }
+    }
+  },
+),
             IconButton(
               icon: const Icon(Icons.logout, color: Colors.redAccent, size: 24),
               tooltip: 'تسجيل الخروج',
@@ -1514,5 +1541,36 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+}
+class LocalNetworkScanner {
+  static Future<List<String>> scanLocalDevices() async {
+    List<String> foundDevices = [];
+    try {
+      for (var interface in await NetworkInterface.list()) {
+        for (var addr in interface.addresses) {
+          if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
+            String subnet = addr.address.substring(0, addr.address.lastIndexOf('.'));
+            List<Future> futures = [];
+            for (int i = 1; i < 25; i++) {
+              String targetIp = '$subnet.$i';
+              futures.add(_checkDevice(targetIp, foundDevices));
+            }
+            await Future.wait(futures);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('خطأ في مسح الشبكة المحلية: $e');
+    }
+    return foundDevices;
+  }
+
+  static Future<void> _checkDevice(String ip, List<String> foundDevices) async {
+    try {
+      final socket = await Socket.connect(ip, 8080, timeout: const Duration(milliseconds: 300));
+      foundDevices.add(ip);
+      socket.destroy();
+    } catch (_) {}
   }
 }
