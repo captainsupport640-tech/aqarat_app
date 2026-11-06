@@ -27,6 +27,8 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   local_auth: ^3.0.2
+  printing: ^5.15.1
+  pdf: ^3.13.1
 
 dev_dependencies:
   flutter_test:

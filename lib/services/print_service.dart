@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../app_data.dart';
 import 'local_storage_service.dart';
 import 'cloud_sync_service.dart';
 

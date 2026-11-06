@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../app_data.dart';
-import '../services/local_storage_service.dart';
-import '../services/cloud_sync_service.dart';
+import 'local_storage_service.dart';
+import 'cloud_sync_service.dart';
 
 class NotificationItem {
   final String id;
@@ -34,6 +34,12 @@ class NotificationService {
     }
     final rawList = AppData.storage['read_notifications']!;
     return rawList.map((e) => e.toString()).toList();
+  }
+
+  /// جلب عدد الإشعارات غير المقروءة فقط للعداد الخارجي (الجرس)
+  static int get unreadCount {
+    List<NotificationItem> activeUnread = getAllActiveNotifications(unreadOnly: true);
+    return activeUnread.length;
   }
 
   /// جلب جميع التنبيهات النشطة غير المقروءة فقط أو إجمالي التنبيهات
@@ -203,7 +209,6 @@ class NotificationService {
       builder: (bottomSheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            // جلب الإشعارات غير المقروءة فقط
             List<NotificationItem> activeUnreadItems = getAllActiveNotifications(unreadOnly: true);
 
             return Directionality(

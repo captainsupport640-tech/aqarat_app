@@ -15,7 +15,7 @@ class LoginScreen extends StatefulWidget {
 
   static final Map<String, Map<String, String>> appUsers = {
     '01200626469': {
-      'company': 'شركة ماهي البهوتي للاستثمار العقاري',
+      'company': 'شركة ماهي البهوتي للتسويق العقاري',
       'firstName': 'الكابتن عبد الجواد',
       'password': '1983',
       'role': 'مدير',
@@ -62,7 +62,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _newUsernameController = TextEditingController();
   final TextEditingController _newPasswordController = TextEditingController();
   final TextEditingController _securityAnswerController = TextEditingController();
-  final TextEditingController _deletePhoneController = TextEditingController();
 
   String selectedSecurityQuestion = 'ما هي مدينة ميلادك؟';
   String selectedUserRole = 'مدخل بيانات';
@@ -139,7 +138,6 @@ class _LoginScreenState extends State<LoginScreen> {
     _newUsernameController.dispose();
     _newPasswordController.dispose();
     _securityAnswerController.dispose();
-    _deletePhoneController.dispose();
     super.dispose();
   }
 
@@ -342,117 +340,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // نافذة إدارة الموظفين: خيار إضافة جديد أو حذف موظف حالي
-  void _showEmployeeManagementChoice() {
-    showDialog(
-      context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          backgroundColor: const Color(0xFF2C2C2C),
-          title: const Text('إدارة حسابات الموظفين بالشركة', style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.person_add, color: Colors.greenAccent),
-                title: const Text('إضافة موظف جديد', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                subtitle: const Text('تراخيص وإضافة موظف تحت مظلة الإدارة', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showRegisterDialog();
-                },
-              ),
-              const Divider(color: Colors.grey),
-              ListTile(
-                leading: const Icon(Icons.person_remove, color: Colors.redAccent),
-                title: const Text('حذف موظف متاح', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                subtitle: const Text('إلغاء صلاحية موظف وحذفه من السحابة تماماً', style: TextStyle(color: Colors.grey, fontSize: 11)),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showDeleteEmployeeDialog();
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showDeleteEmployeeDialog() {
-    _deletePhoneController.clear();
-    showDialog(
-      context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          backgroundColor: const Color(0xFF2C2C2C),
-          title: const Text('حذف موظف وإلغاء صلاحيته', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('أدخل رقم تليفون الموظف المراد حسابه وحذفه من شجرة الشركة بالسحابة:', style: TextStyle(color: Colors.white, fontSize: 13)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _deletePhoneController,
-                keyboardType: TextInputType.phone,
-                style: const TextStyle(color: Colors.white),
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(11),
-                ],
-                decoration: const InputDecoration(
-                  labelText: 'رقم موبايل الموظف (11 رقم)',
-                  labelStyle: TextStyle(color: Colors.amber),
-                  prefixIcon: Icon(Icons.phone_android, color: Colors.amber),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إلغاء', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700),
-              onPressed: () async {
-                String phoneToDelete = _deletePhoneController.text.trim();
-                if (!_isValidEgyptianPhone(phoneToDelete)) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('يرجى إدخال رقم تليفون صحيح مكون من 11 رقم!'), backgroundColor: Colors.orange),
-                  );
-                  return;
-                }
-
-                String companyAdminEmail = await LocalStorageService.getPersonalGmail();
-                bool deleted = await AppStorageManager.deleteEmployeeFromTree(
-                  companyAdminEmail: companyAdminEmail,
-                  employeePhone: phoneToDelete,
-                );
-
-                LoginScreen.appUsers.remove(phoneToDelete);
-                await LocalStorageService.saveAppUsers(LoginScreen.appUsers);
-
-                if (mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(deleted ? 'تم حذف الموظف ($phoneToDelete) بنجاح وإلغاء صلاحياته!' : 'تم مسح الحساب محلياً وجاري المزامنة مع السحابة.'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              },
-              child: const Text('حذف الموظف نهائياً', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _showRegisterDialog() {
     _companyEmailController.clear();
     _companyNameController.clear();
@@ -471,7 +358,7 @@ class _LoginScreenState extends State<LoginScreen> {
               child: AlertDialog(
                 backgroundColor: const Color(0xFF2C2C2C),
                 title: const Text(
-                  'تسجيل حساب جديد وتنشيط المنظومة',
+                  'تسجيل شركة جديدة وتنشيط المنظومة',
                   style: TextStyle(color: Colors.amberAccent, fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 content: SingleChildScrollView(
@@ -483,7 +370,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: const TextStyle(color: Colors.cyanAccent),
                         keyboardType: TextInputType.emailAddress,
                         decoration: const InputDecoration(
-                          labelText: 'إدخال الجيميل لمدير الشركة الرئيسي (اختياري)',
+                          labelText: 'الجيميل الرئيسي لمدير الشركة',
                           labelStyle: TextStyle(color: Colors.cyanAccent),
                           prefixIcon: Icon(Icons.mark_email_read, color: Colors.cyanAccent),
                         ),
@@ -503,7 +390,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         controller: _newFirstNameController,
                         style: const TextStyle(color: Colors.white),
                         decoration: const InputDecoration(
-                          labelText: 'اسم المستخدم أو الموظف',
+                          labelText: 'اسم المدير المسئول',
                           labelStyle: TextStyle(color: Colors.grey),
                           prefixIcon: Icon(Icons.person, color: Colors.grey),
                         ),
@@ -518,7 +405,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           LengthLimitingTextInputFormatter(11),
                         ],
                         decoration: const InputDecoration(
-                          labelText: 'اسم المستخدم (رقم التليفون - 11 رقم)',
+                          labelText: 'اسم المستخدم (رقم الموبايل - 11 رقم)',
                           labelStyle: TextStyle(color: Colors.amber),
                           prefixIcon: Icon(Icons.phone_android, color: Colors.amber),
                         ),
@@ -641,7 +528,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('تم تسجيل حساب الموظف بالدومين الموحد بنجاح!'), backgroundColor: Colors.green),
+                        const SnackBar(content: Text('تم تسجيل الشركة بنجاح!'), backgroundColor: Colors.green),
                       );
                     },
                     child: const Text('حفظ وتسجيل', style: TextStyle(color: Colors.white)),
@@ -900,8 +787,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: const Text('نسيت كلمة السر؟', style: TextStyle(color: Colors.cyanAccent, fontSize: 12)),
                           ),
                           TextButton(
-                            onPressed: _showEmployeeManagementChoice,
-                            child: const Text('إدارة حسابات الموظفين', style: TextStyle(color: Colors.amberAccent, fontSize: 12)),
+                            onPressed: _showRegisterDialog,
+                            child: const Text('تسجيل شركة جديدة', style: TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                           ),
                         ],
                       ),

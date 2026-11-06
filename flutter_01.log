@@ -1,0 +1,82 @@
+Flutter crash report.
+Please report a bug at https://github.com/flutter/flutter/issues.
+
+## command
+
+flutter pub get --no-example
+
+## exception
+
+PathExistsException: PathExistsException: Cannot create link, path = 'C:\Projects\aqarat_app\windows\flutter\ephemeral\.plugin_symlinks\firebase_core' (OS Error: Cannot create a file when that file already exists, errno = 183)
+
+```
+#0      _Link.throwIfError (dart:io/link.dart:358:7)
+#1      _Link.createSync (dart:io/link.dart:276:5)
+#2      ForwardingLink.createSync (package:file/src/forwarding/forwarding_link.dart:20:16)
+#3      ErrorHandlingLink.createSync.<anonymous closure> (package:flutter_tools/src/base/error_handling_io.dart:893:22)
+#4      _runSync (package:flutter_tools/src/base/error_handling_io.dart:1118:16)
+#5      ErrorHandlingLink.createSync (package:flutter_tools/src/base/error_handling_io.dart:892:5)
+#6      _createPlatformPluginSymlinks (package:flutter_tools/src/flutter_plugins.dart:1276:12)
+#7      createPluginSymlinks (package:flutter_tools/src/flutter_plugins.dart:1193:5)
+#8      refreshPluginsList (package:flutter_tools/src/flutter_plugins.dart:1333:5)
+<asynchronous suspension>
+#9      FlutterProject.ensureReadyForPlatformSpecificTooling (package:flutter_tools/src/project.dart:445:5)
+<asynchronous suspension>
+#10     PackagesGetCommand.runCommand.<anonymous closure> (package:flutter_tools/src/commands/packages.dart:409:11)
+<asynchronous suspension>
+#11     Pool.forEach.run (package:pool/pool.dart:183:19)
+<asynchronous suspension>
+#12     Pool.withResource (package:pool/pool.dart:127:14)
+<asynchronous suspension>
+#13     Future.wait.<anonymous closure> (dart:async/future.dart:567:21)
+<asynchronous suspension>
+#14     Pool.forEach.onListen.<anonymous closure> (package:pool/pool.dart:203:23)
+<asynchronous suspension>
+#15     _StreamController.close (dart:async/stream_controller.dart:640:3)
+<asynchronous suspension>
+#16     _nullDataHandler (dart:async/stream_impl.dart:549:1)
+<asynchronous suspension>
+```
+
+## flutter doctor
+
+```
+[✓] Flutter (Channel stable, 3.47.6, on Microsoft Windows [Version 10.0.16299.1127], locale en-US) [1,840ms]
+    • Flutter version 3.47.6 on channel stable at C:\src\flutter
+    • Upstream repository https://github.com/flutter/flutter.git
+    • Framework revision 5fc346839b (5 weeks ago), 2026-09-30 15:02:49 -0700
+    • Engine revision 692136cb65
+    • Dart version 3.13.5
+    • DevTools version 2.60.0
+    • Feature flags: enable-web, enable-linux-desktop, enable-macos-desktop, enable-windows-desktop, enable-android, enable-ios, cli-animations, enable-native-assets, enable-record-use, enable-swift-package-manager, omit-legacy-version-file, enable-lldb-debugging, enable-uiscene-migration
+
+[✓] Windows Version (10 Pro 64-bit, 1709) [8.7s]
+
+[✓] Android toolchain - develop for Android devices (Android SDK version 36.0.0) [13.7s]
+    • Android SDK at C:\Users\Capiten\AppData\Local\Android\Sdk
+    • Emulator version 37.2.12.0 (build_id 16428233) (CL:N/A)
+    • Platform android-37.0, build-tools 36.0.0
+    • Java binary at: C:\Program Files\Android\Android Studio\jbr\bin\java
+      This is the JDK bundled with the latest Android Studio installation on this machine.
+      To manually set the JDK path, use: `flutter config --jdk-dir="path/to/jdk"`.
+    • Java version OpenJDK Runtime Environment (build 25.0.3+-15898627-b508.16)
+    • All Android licenses accepted.
+
+[✓] Chrome - develop for the web [879ms]
+    • Chrome at C:\Program Files\Google\Chrome\Application\chrome.exe
+
+[✓] Visual Studio - develop Windows apps (Visual Studio Build Tools 2022 17.14.44) [876ms]
+    • Visual Studio at C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools
+    • Visual Studio Build Tools 2022 version 17.14.37827.9
+    • Windows 10 SDK version 10.0.26100.0
+
+[✓] Connected device (3 available) [2.2s]
+    • Windows (desktop) • windows • windows-x64    • Microsoft Windows [Version 10.0.16299.1127]
+    • Chrome (web)      • chrome  • web-javascript • Google Chrome 156.0.8078.81
+    • Edge (web)        • edge    • web-javascript • Microsoft Edge 156.0.4314.58
+
+[✓] Network resources [2.1s]
+    • All expected network resources are available.
+
+• No issues found!
+```

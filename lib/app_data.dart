@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:printing/printing.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'services/local_storage_service.dart';
 import 'services/security_manager.dart';
 import 'services/cloud_sync_service.dart';
@@ -398,4 +401,170 @@ class TrashBinManager {
       );
     }
   }
+}
+
+/// 1️⃣ دالة طباعة جدول أي شاشة منفردة (PDF)
+Future<void> printTableReport({
+  required String title,
+  required List<String> headers,
+  required List data,
+}) async {
+  final pdf = pw.Document();
+
+  final List<List<String>> tableData = [];
+  for (int i = 0; i < data.length; i++) {
+    final item = data[i];
+    if (item is Map) {
+      List<String> row = ['${i + 1}'];
+      for (var h in headers.sublist(1)) {
+        row.add(item[h]?.toString() ?? '-');
+      }
+      tableData.add(row);
+    }
+  }
+
+  pdf.addPage(
+    pw.Page(
+      pageFormat: PdfPageFormat.a4,
+      build: (pw.Context context) {
+        return pw.Directionality(
+          textDirection: pw.TextDirection.rtl,
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Header(
+                level: 0,
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('منظومة الكابتن لإدارة العقارات', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+                    pw.Text('تقرير: $title', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 10),
+              pw.TableHelper.fromTextArray(
+                headers: headers,
+                data: tableData,
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+                headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey800),
+                rowDecoration: const pw.BoxDecoration(color: PdfColors.grey100),
+                cellAlignment: pw.Alignment.centerRight,
+              ),
+              pw.SizedBox(height: 20),
+              pw.Align(
+                alignment: pw.Alignment.centerLeft,
+                child: pw.Text('تاريخ الطباعة: ${DateTime.now().toString().split(' ')[0]}', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+              ),
+            ],
+          ),
+        );
+      },
+    ),
+  );
+
+  await Printing.layoutPdf(
+    onLayout: (PdfPageFormat format) async => pdf.save(),
+    name: 'تقرير_$title.pdf',
+  );
+}
+
+/// 2️⃣ دالة تصدير وطباعة التقرير العام الشامل لجميع أقسام وشاشات المنظومة معاً
+Future<void> printFullGeneralReport() async {
+  final pdf = pw.Document();
+
+  final Map<String, List<String>> sectionsConfig = {
+    'بيانات العملاء': ['م', 'الاسم', 'رقم التليفون', 'النوع', 'ملاحظات'],
+    'بيانات السماسرة': ['م', 'الاسم', 'رقم التليفون', 'المنطقة', 'العنوان'],
+    'طلبات العملاء': ['م', 'التاريخ', 'اسم العميل', 'نوع العملية', 'نوع العقار', 'الميزانية'],
+    'المعروض للبيع': ['م', 'كود الوحدة', 'نوع العقار', 'السعر', 'المساحة', 'العنوان'],
+    'المعروض للإيجار': ['م', 'كود الوحدة', 'نوع العقار', 'القيمة الإيجارية', 'المساحة', 'العنوان'],
+    'المعاينات': ['م', 'التاريخ', 'إسم المشتري', 'كود الوحدة', 'نوع العقار', 'حالة المعاينة'],
+    'العمليات التامة': ['م', 'التاريخ', 'اسم العميل', 'نوع العقار', 'القيمة', 'العمولة'],
+    'الحسابات': ['م', 'التاريخ', 'البيان', 'المبلغ', 'النوع'],
+  };
+
+  pdf.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      build: (pw.Context context) {
+        List<pw.Widget> widgets = [];
+
+        widgets.add(
+          pw.Header(
+            level: 0,
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text('منظومة الكابتن لإدارة العقارات', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+                pw.Text('التقرير العام الشامل للمنظومة', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.blueGrey900)),
+              ],
+            ),
+          ),
+        );
+
+        widgets.add(pw.SizedBox(height: 10));
+        widgets.add(
+          pw.Text(
+            'تاريخ الاستخراج: ${DateTime.now().toString().split('.')[0]}',
+            style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700),
+          ),
+        );
+        widgets.add(pw.SizedBox(height: 15));
+
+        sectionsConfig.forEach((sectionTitle, headers) {
+          List data = AppData.storage[sectionTitle] ?? [];
+
+          widgets.add(
+            pw.Container(
+              padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              decoration: const pw.BoxDecoration(color: PdfColors.blueGrey700),
+              child: pw.Text(
+                '📌 $sectionTitle (عدد السجلات: ${data.length})',
+                style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+              ),
+            ),
+          );
+          widgets.add(pw.SizedBox(height: 6));
+
+          if (data.isEmpty) {
+            widgets.add(pw.Text('لا توجد بيانات مسجلة في هذا القسم حالياً.', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600)));
+            widgets.add(pw.SizedBox(height: 12));
+          } else {
+            List<List<String>> tableData = [];
+            for (int i = 0; i < data.length; i++) {
+              final item = data[i];
+              if (item is Map) {
+                List<String> row = ['${i + 1}'];
+                for (var h in headers.sublist(1)) {
+                  row.add(item[h]?.toString() ?? '-');
+                }
+                tableData.add(row);
+              }
+            }
+
+            widgets.add(
+              pw.TableHelper.fromTextArray(
+                headers: headers,
+                data: tableData,
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white, fontSize: 10),
+                headerDecoration: const pw.BoxDecoration(color: PdfColors.grey800),
+                rowDecoration: const pw.BoxDecoration(color: PdfColors.grey100),
+                cellStyle: const pw.TextStyle(fontSize: 9),
+                cellAlignment: pw.Alignment.centerRight,
+              ),
+            );
+            widgets.add(pw.SizedBox(height: 16));
+          }
+        });
+
+        return widgets;
+      },
+    ),
+  );
+
+  await Printing.layoutPdf(
+    onLayout: (PdfPageFormat format) async => pdf.save(),
+    name: 'التقرير_العام_الشامل_${DateTime.now().toString().split(' ')[0]}.pdf',
+  );
 }

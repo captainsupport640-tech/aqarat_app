@@ -484,80 +484,235 @@ class _HomeScreenState extends State<HomeScreen> {
     final TextEditingController empPassController = TextEditingController();
     String empRole = 'مدخل بيانات';
 
-    String currentPhone = SecurityManager.currentUsername;
-    String adminEmail = currentPhone.isNotEmpty ? '$currentPhone@aqarat.com' : 'admin@aqarat.com';
+    String currentPhone = SecurityManager.currentUsername.trim();
+    String adminEmail = SecurityManager.currentCompanyAdminEmail.trim();
+    
+    if (adminEmail.isEmpty) {
+      if (SecurityManager.isAdmin) {
+        adminEmail = currentPhone.isNotEmpty ? '$currentPhone@aqarat.com' : 'admin@aqarat.com';
+      } else {
+        adminEmail = 'captain.support640@gmail.com';
+      }
+    }
 
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => Directionality(
+      builder: (context) => DefaultTabController(
+        length: 2,
+        child: Directionality(
           textDirection: TextDirection.rtl,
           child: AlertDialog(
             backgroundColor: const Color(0xFF2C2C2C),
-            title: const Text('إضافة موظف جديد للفريق (شجرة الحسابات)', style: TextStyle(color: Colors.greenAccent, fontSize: 16)),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E1E1E),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.4)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            title: Column(
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.badge, color: Colors.amberAccent, size: 24),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'إدارة فريق العمل والموظفين',
+                        style: TextStyle(color: Colors.amberAccent, fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
                     ),
-                    child: Row(
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1E1E),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'شركة المدير: $adminEmail',
+                    style: const TextStyle(color: Colors.cyanAccent, fontSize: 11),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const TabBar(
+                  indicatorColor: Colors.amberAccent,
+                  labelColor: Colors.amberAccent,
+                  unselectedLabelColor: Colors.grey,
+                  tabs: [
+                    Tab(icon: Icon(Icons.person_add, size: 18), text: 'إضافة موظف'),
+                    Tab(icon: Icon(Icons.person_remove, size: 18), text: 'حذف موظف'),
+                  ],
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 460,
+              height: 320,
+              child: TabBarView(
+                children: [
+                  SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.admin_panel_settings, color: Colors.cyanAccent, size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'مظلة شركة المدير: $adminEmail',
-                            style: const TextStyle(color: Colors.cyanAccent, fontSize: 11, fontWeight: FontWeight.bold),
-                            overflow: TextOverflow.ellipsis,
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: empNameController,
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          decoration: const InputDecoration(labelText: 'اسم الموظف', labelStyle: TextStyle(color: Colors.grey, fontSize: 12)),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: empUserController,
+                          keyboardType: TextInputType.phone,
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(11),
+                          ],
+                          decoration: const InputDecoration(
+                            labelText: 'رقم التليفون (اسم المستخدم - 11 رقم)',
+                            labelStyle: TextStyle(color: Colors.amber, fontSize: 12),
+                            prefixIcon: Icon(Icons.phone_android, color: Colors.amber, size: 18),
                           ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: empPassController,
+                          obscureText: true,
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          decoration: const InputDecoration(labelText: 'كلمة السر', labelStyle: TextStyle(color: Colors.grey, fontSize: 12)),
+                        ),
+                        const SizedBox(height: 8),
+                        StatefulBuilder(
+                          builder: (context, setRoleState) {
+                            return DropdownButtonFormField<String>(
+                              value: empRole,
+                              dropdownColor: const Color(0xFF1E1E1E),
+                              style: const TextStyle(color: Colors.white, fontSize: 13),
+                              decoration: const InputDecoration(labelText: 'الصلاحية', labelStyle: TextStyle(color: Colors.amberAccent, fontSize: 12)),
+                              items: ['نائب مدير', 'مدخل بيانات'].map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
+                              onChanged: (val) {
+                                if (val != null) setRoleState(() => empRole = val);
+                              },
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 14),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green.shade700,
+                            minimumSize: const Size(double.infinity, 40),
+                          ),
+                          icon: const Icon(Icons.check_circle, color: Colors.white, size: 18),
+                          label: const Text('حفظ وإضافة الموظف', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          onPressed: () async {
+                            String name = empNameController.text.trim();
+                            String userPhone = empUserController.text.trim();
+                            String pass = empPassController.text.trim();
+
+                            if (name.isEmpty || userPhone.isEmpty || pass.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('الرجاء إكمال كافة البيانات!'), backgroundColor: Colors.orange),
+                              );
+                              return;
+                            }
+
+                            if (userPhone.length != 11) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('رقم التليفون يجب أن يكون 11 رقماً!'), backgroundColor: Colors.orange),
+                              );
+                              return;
+                            }
+
+                            await AppStorageManager.registerEmployeeInTree(
+                              companyAdminEmail: adminEmail,
+                              employeePhone: userPhone,
+                              employeeName: name,
+                              password: pass,
+                              role: empRole,
+                            );
+
+                            if (!AppData.storage.containsKey('الحسابات') || AppData.storage['الحسابات'] == null) {
+                              AppData.storage['الحسابات'] = [];
+                            }
+                            (AppData.storage['الحسابات'] as List).add({
+                              'اسم الموظف': name,
+                              'رقم التليفون': userPhone,
+                              'الصلاحية': empRole,
+                            });
+
+                            await LocalStorageService.saveLocally();
+
+                            if (context.mounted) {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('تم تسجيل الموظف ($name) وإعطائه الصلاحية بنجاح!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          },
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: empNameController,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(labelText: 'اسم الموظف', labelStyle: TextStyle(color: Colors.grey)),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: empUserController,
-                    keyboardType: TextInputType.phone,
-                    style: const TextStyle(color: Colors.white),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(11),
-                    ],
-                    decoration: const InputDecoration(
-                      labelText: 'رقم التليفون (اسم المستخدم - 11 رقم)',
-                      labelStyle: TextStyle(color: Colors.amber),
-                      prefixIcon: Icon(Icons.phone_android, color: Colors.amber),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: empPassController,
-                    obscureText: true,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(labelText: 'كلمة السر', labelStyle: TextStyle(color: Colors.grey)),
-                  ),
-                  const SizedBox(height: 15),
-                  DropdownButtonFormField<String>(
-                    initialValue: empRole,
-                    dropdownColor: const Color(0xFF1E1E1E),
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(labelText: 'صلاحية الموظف', labelStyle: TextStyle(color: Colors.amberAccent)),
-                    items: ['نائب مدير', 'مدخل بيانات'].map((r) => DropdownMenuItem(value: r, child: Text(r))).toList(),
-                    onChanged: (val) {
-                      if (val != null) setDialogState(() => empRole = val);
+                  StatefulBuilder(
+                    builder: (context, setListState) {
+                      List appUsers = AppData.storage['الحسابات'] ?? [];
+
+                      if (appUsers.isEmpty) {
+                        return const Center(
+                          child: Text(
+                            'لا يوجد موظفون مسجلون حالياً تحت هذه الشركة.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.white54, fontSize: 13),
+                          ),
+                        );
+                      }
+
+                      return ListView.builder(
+                        itemCount: appUsers.length,
+                        itemBuilder: (context, index) {
+                          final emp = Map<String, dynamic>.from(appUsers[index]);
+                          String empName = emp['اسم الموظف'] ?? emp['إسم الموظف'] ?? emp['الاسم'] ?? 'موظف';
+                          String empPhone = emp['رقم التليفون'] ?? emp['الهاتف'] ?? '';
+
+                          return Card(
+                            color: const Color(0xFF1E1E1E),
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            child: ListTile(
+                              leading: const Icon(Icons.person, color: Colors.cyanAccent, size: 22),
+                              title: Text(empName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                              subtitle: Text('تليفون: $empPhone', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.delete_forever, color: Colors.redAccent, size: 22),
+                                tooltip: 'حذف الموظف نهائياً وإلغاء دخوله',
+                                onPressed: () async {
+                                  bool deleted = await AppStorageManager.deleteEmployeeFromTree(
+                                    companyAdminEmail: adminEmail,
+                                    employeePhone: empPhone,
+                                  );
+
+                                  if (deleted) {
+                                    setListState(() {
+                                      appUsers.removeAt(index);
+                                    });
+                                    await LocalStorageService.saveLocally();
+
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('تم حذف الموظف ($empName) وإلغاء صلاحية دخوله تماماً!'),
+                                          backgroundColor: Colors.redAccent,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                              ),
+                            ),
+                          );
+                        },
+                      );
                     },
                   ),
                 ],
@@ -566,51 +721,7 @@ class _HomeScreenState extends State<HomeScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('إلغاء', style: TextStyle(color: Colors.grey)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700),
-                onPressed: () async {
-                  String name = empNameController.text.trim();
-                  String userPhone = empUserController.text.trim();
-                  String pass = empPassController.text.trim();
-
-                  if (name.isEmpty || userPhone.isEmpty || pass.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('الرجاء إكمال بيانات الموظف!'), backgroundColor: Colors.orange),
-                    );
-                    return;
-                  }
-
-                  if (userPhone.length != 11) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('الرجاء إدخال رقم تليفون صحيح مكون من 11 رقم!'), backgroundColor: Colors.orange),
-                    );
-                    return;
-                  }
-
-                  await AppStorageManager.registerEmployeeInTree(
-                    companyAdminEmail: adminEmail,
-                    employeePhone: userPhone,
-                    employeeName: name,
-                    password: pass,
-                    role: empRole,
-                  );
-
-                  await LocalStorageService.saveLocally();
-                  
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('تم إضافة الموظف ($name) برقم ($userPhone) وربطه بنجاح في شجرة الحسابات!'),
-                        backgroundColor: Colors.green,
-                        duration: const Duration(seconds: 4),
-                      ),
-                    );
-                  }
-                },
-                child: const Text('حفظ وإضافة', style: TextStyle(color: Colors.white)),
+                child: const Text('إغلاق', style: TextStyle(color: Colors.cyanAccent)),
               ),
             ],
           ),
@@ -618,7 +729,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
+           
   void _showSettingsDialog(BuildContext context) {
     if (SecurityManager.isGuest) {
       SecurityManager.showPermissionDeniedSnackBar(context, 'حساب ضيف: غير مسموح لك بالدخول إلى إعدادات المنظومة والضبط.');
@@ -626,7 +737,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final TextEditingController activationController = TextEditingController();
-    final TextEditingController wifiIpController = TextEditingController();
     final TextEditingController googleDriveEmailController = TextEditingController(text: _personalGmail);
 
     String myDeviceId = "CAPTAIN-PC-2026";
@@ -687,7 +797,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         decoration: BoxDecoration(
                           color: const Color(0xFF252525),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.4)),
+                          border: Border.all(color: Colors.cyanAccent.withOpacity(0.4)),
                         ),
                         child: Row(
                           children: [
@@ -806,89 +916,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF252525),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.4)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Row(
-                              children: [
-                                Icon(Icons.wifi, color: Colors.greenAccent, size: 20),
-                                SizedBox(width: 8),
-                                Text('الربط والشبكة المحلية (WiFi)', style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 13)),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            const Text(
-                              'تأكد من اتصال الأجهزة بنفس شبكة الواي فاي لمشاركة ومزامنة البيانات بسلاسة بين الأجهزة.',
-                              style: TextStyle(color: Colors.white70, fontSize: 11),
-                            ),
-                            const SizedBox(height: 10),
-                            TextField(
-                              controller: wifiIpController,
-                              style: const TextStyle(color: Colors.white, fontSize: 12),
-                              keyboardType: TextInputType.number,
-                              decoration: InputDecoration(
-                                labelText: 'عنوان IP الجهاز الرئيسي (مثال: 192.168.1.50)',
-                                labelStyle: const TextStyle(color: Colors.white60, fontSize: 11),
-                                prefixIcon: const Icon(Icons.computer, color: Colors.greenAccent, size: 18),
-                                filled: true,
-                                fillColor: const Color(0xFF141414),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.teal.shade800,
-                                minimumSize: const Size(double.infinity, 36),
-                                alignment: Alignment.centerRight,
-                              ),
-                              icon: const Icon(Icons.link, color: Colors.white, size: 18),
-                              label: const Text('اتصال يدوي عبر الـ IP', style: TextStyle(color: Colors.white, fontSize: 12)),
-                              onPressed: () {
-                                String enteredIp = wifiIpController.text.trim();
-                                if (enteredIp.isEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('برجاء كتابة عنوان الـ IP أولاً!'), backgroundColor: Colors.red, duration: Duration(seconds: 2)),
-                                  );
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('جاري الاتصال بالجهاز عبر الـ IP: $enteredIp...'), backgroundColor: Colors.teal, duration: const Duration(seconds: 2)),
-                                  );
-                                }
-                              },
-                            ),
-                            const SizedBox(height: 6),
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green.shade800,
-                                minimumSize: const Size(double.infinity, 36),
-                                alignment: Alignment.centerRight,
-                              ),
-                              icon: const Icon(Icons.hub, color: Colors.white, size: 18),
-                              label: const Text('فحص تلقائي للأجهزة عبر الشبكة المحلية', style: TextStyle(color: Colors.white, fontSize: 12)),
-                              onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('جاري البحث عن الأجهزة المجاورة على نفس شبكة الواي فاي...'), backgroundColor: Colors.green, duration: Duration(seconds: 2)),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      const Divider(color: Colors.grey),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
                           color: const Color(0xFF282828),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                          border: Border.all(color: Colors.amber.withOpacity(0.4)),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -985,7 +1015,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
   @override
   Widget build(BuildContext context) {
     String currentRole = SecurityManager.currentUserRole;
@@ -1086,7 +1115,7 @@ class _HomeScreenState extends State<HomeScreen> {
             if (!isGuest && isMasterUser)
               IconButton(
                 icon: const Icon(Icons.person_add_alt_1, color: Colors.greenAccent, size: 24),
-                tooltip: 'إضافة موظف جديد للفريق',
+                tooltip: 'إدارة فريق العمل والموظفين',
                 onPressed: () => _showAddEmployeeDialog(context),
               ),
             IconButton(
