@@ -971,8 +971,8 @@ class _HomeScreenState extends State<HomeScreen> {
     bool isMasterUser = SecurityManager.isAdmin;
 
     final List allMenuItems = [
-      {'title': 'بيانات العملاء', 'icon': Icons.people, 'color': Colors.blue.shade700, 'screen': const ClientsScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
-      {'title': 'بيانات السماسرة', 'icon': Icons.badge, 'color': Colors.teal.shade700, 'screen': const BrokersScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
+      {'title': 'بيانات العملاء', 'icon': Icons.people, 'color': Colors.blue.shade700, 'screen': const ClientsScreen(), 'allowedRoles': ['مدير', 'مدير النظام']},
+      {'title': 'بيانات السماسرة', 'icon': Icons.badge, 'color': Colors.teal.shade700, 'screen': const BrokersScreen(), 'allowedRoles': ['مدير', 'مدير النظام']},
       {'title': 'طلبات العملاء', 'icon': Icons.assignment, 'color': Colors.orange.shade700, 'screen': const CustomerRequestsScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
       {'title': 'المعروض للبيع', 'icon': Icons.sell, 'color': Colors.green.shade700, 'screen': const ForSaleScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
       {'title': 'المعروض للإيجار', 'icon': Icons.house, 'color': Colors.red.shade700, 'screen': const ForRentScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
@@ -980,15 +980,15 @@ class _HomeScreenState extends State<HomeScreen> {
       {'title': 'العمليات المكتملة', 'icon': Icons.task_alt, 'color': Colors.indigo.shade700, 'screen': const CompletedOperationsScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير']},
       {'title': 'حسابات المنظومة', 'icon': Icons.account_balance_wallet, 'color': Colors.brown.shade700, 'screen': const AccountsScreen(), 'allowedRoles': ['مدير', 'مدير النظام']},
       {'title': 'التقرير العام', 'icon': Icons.bar_chart, 'color': Colors.blueGrey.shade700, 'screen': const GeneralReportScreen(), 'allowedRoles': ['مدير', 'مدير النظام']},
-      {'title': 'الأرشيف', 'icon': Icons.archive, 'color': Colors.blueGrey.shade900, 'screen': const ArchiveScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير']},
+      {'title': 'الأرشيف', 'icon': Icons.archive, 'color': Colors.blueGrey.shade900, 'screen': const ArchiveScreen(), 'allowedRoles': ['مدير', 'مدير النظام']},
     ];
 
     final List menuItems = allMenuItems.where((item) {
-      if (isMasterUser || isGuest) return true;
-      List<String> allowed = item['allowedRoles'];
+      if (SecurityManager.isProgrammer || isMasterUser || isGuest) return true;
+      List<String> allowed = item['allowedRoles'] ?? [];
       return allowed.contains(currentRole);
     }).toList();
-
+    
     int unreadNotifCount = NotificationService.unreadCount;
 
     return Directionality(

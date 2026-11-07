@@ -1,4 +1,4 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../app_data.dart';
@@ -42,48 +42,51 @@ class NotificationService {
           Permission.notification,
           Permission.storage,
         ].request();
-
-        if (await Permission.systemAlertWindow.isDenied) {
-          await Permission.systemAlertWindow.request();
-        }
-
-        if (await Permission.manageExternalStorage.isDenied) {
-          await Permission.manageExternalStorage.request();
-        }
       } catch (e) {
-        debugPrint('⚠️ خطأ أثناء طلب صلاحيات الإشعارات: $e');
+        debugPrint('⚠️ خطأ صلاحيات الإشعارات: $e');
       }
     }
   }
 
-  /// جلب قائمة المعرّفات المقروءة بشكل مضمون وموحّد
+  /// جلب قائمة المعرّفات المقروءة بشكل آمن
   static List<String> _getReadIds() {
-    if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
-      AppData.storage['read_notifications'] = <String>[];
-    }
-    final List rawList = AppData.storage['read_notifications']!;
-    return rawList.map((e) => e.toString().trim()).toList();
+    try {
+      if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
+        AppData.storage['read_notifications'] = <String>[];
+      }
+      final rawList = AppData.storage['read_notifications'];
+      if (rawList is List) {
+        return rawList.map((e) => e.toString().trim()).toList();
+      }
+    } catch (_) {}
+    return [];
   }
 
-  /// جلب عدد الإشعارات غير المقروءة فقط للعداد الخارجي (الجرس) بدقة تامة
+  /// جلب عدد الإشعارات غير المقروءة بدقة
   static int get unreadCount {
-    List<NotificationItem> activeUnread = getAllActiveNotifications(unreadOnly: true);
-    return activeUnread.length;
+    try {
+      return getAllActiveNotifications(unreadOnly: true).length;
+    } catch (_) {
+      return 0;
+    }
   }
 
-  /// جلب جميع التنبيهات النشطة وربطها بالملفات الداخلية
+  /// جلب جميع التنبيهات النشطة
   static List<NotificationItem> getAllActiveNotifications({bool unreadOnly = false}) {
     List<NotificationItem> notifications = [];
     List<String> readIds = _getReadIds();
 
-    // 1️⃣ تنبيهات شاشة طلبات العملاء
-    _extractCustomerRequestNotifications(notifications, readIds);
+    try {
+      _extractCustomerRequestNotifications(notifications, readIds);
+    } catch (_) {}
 
-    // 2️⃣ تنبيهات شاشة المعاينات
-    _extractInspectionNotifications(notifications, readIds);
+    try {
+      _extractInspectionNotifications(notifications, readIds);
+    } catch (_) {}
 
-    // 3️⃣ تنبيهات الحسابات والتذكيرات المالية
-    _extractAccountReminderNotifications(notifications, readIds);
+    try {
+      _extractAccountReminderNotifications(notifications, readIds);
+    } catch (_) {}
 
     if (unreadOnly) {
       return notifications.where((n) => !n.isRead).toList();
@@ -92,160 +95,161 @@ class NotificationService {
     return notifications;
   }
 
-  /// استخراج تنبيهات طلبات العملاء والعقارات المطابقة
+  /// استخراج تنبيهات طلبات العملاء
   static void _extractCustomerRequestNotifications(List<NotificationItem> list, List<String> readIds) {
-    try {
-      List requests = AppData.storage['طلبات العملاء'] ?? [];
-      for (var req in requests) {
-        if (req is Map) {
-          String clientName = req['اسم العميل'] ?? 'عميل';
-          String propType = req['نوع العقار'] ?? 'عقار';
-          String opType = req['نوع العملية'] ?? 'طلب';
-          String date = req['التاريخ'] ?? '';
+    var requests = AppData.storage['طلبات العملاء'];
+    if (requests is! List) return;
 
-          bool isRent = opType.contains('إيجار') || opType.contains('ايجار');
-          String targetKey = isRent ? 'العقارات المعروضة للإيجار' : 'العقارات المعروضة للبيع';
-          List properties = AppData.storage[targetKey] ?? 
-                           AppData.storage[isRent ? 'بيانات الإيجار' : 'بيانات البيع'] ?? [];
+    for (var req in requests) {
+      if (req is Map) {
+        String clientName = req['اسم العميل']?.toString() ?? 'عميل';
+        String propType = req['نوع العقار']?.toString() ?? 'عقار';
+        String opType = req['نوع العملية']?.toString() ?? 'طلب';
+        String date = req['التاريخ']?.toString() ?? '';
 
-          int matchCount = 0;
+        bool isRent = opType.contains('إيجار') || opType.contains('ايجار');
+        String targetKey = isRent ? 'العقارات المعروضة للإيجار' : 'العقارات المعروضة للبيع';
+        var properties = AppData.storage[targetKey] ?? 
+                         AppData.storage[isRent ? 'بيانات الإيجار' : 'بيانات البيع'];
+
+        int matchCount = 0;
+        if (properties is List) {
           for (var prop in properties) {
-            if (prop is Map && (prop['نوع العقار'] ?? '').contains(propType)) {
+            if (prop is Map && (prop['نوع العقار']?.toString() ?? '').contains(propType)) {
               matchCount++;
             }
           }
+        }
 
-          if (matchCount > 0) {
-            String notifId = 'req_${clientName}_${propType}_$date';
-            list.add(NotificationItem(
-              id: notifId,
-              title: 'مطابقة طلب عميل: $clientName',
-              details: 'يوجد $matchCount عقار مطابقة لطلب ($propType - $opType)',
-              date: date,
-              category: 'طلب',
-              color: Colors.blueAccent,
-              icon: Icons.person_search,
-              targetScreen: 'طلبات العملاء',
-              isRead: readIds.contains(notifId),
-            ));
-          }
+        if (matchCount > 0) {
+          String notifId = 'req_${clientName}_${propType}_$date';
+          list.add(NotificationItem(
+            id: notifId,
+            title: 'مطابقة طلب عميل: $clientName',
+            details: 'يوجد $matchCount عقار مطابقة لطلب ($propType - $opType)',
+            date: date,
+            category: 'طلب',
+            color: Colors.blueAccent,
+            icon: Icons.person_search,
+            targetScreen: 'طلبات العملاء',
+            isRead: readIds.contains(notifId),
+          ));
         }
       }
-    } catch (e) {
-      debugPrint('خطأ جلب تنبيهات الطلبات: $e');
     }
   }
 
   /// استخراج تنبيهات المعاينات
   static void _extractInspectionNotifications(List<NotificationItem> list, List<String> readIds) {
-    try {
-      List inspections = AppData.storage['المعاينات'] ?? [];
-      for (var insp in inspections) {
-        if (insp is Map) {
-          String status = insp['حالة المعاينة'] ?? 'تحت المعاينة';
-          String buyer = insp['إسم المشتري'] ?? 'مشتري';
-          String propType = insp['نوع العقار'] ?? 'عقار';
-          String date = insp['التاريخ'] ?? '';
+    var inspections = AppData.storage['المعاينات'];
+    if (inspections is! List) return;
 
-          if (status == 'تحت المعاينة') {
-            String notifId = 'insp_${buyer}_${propType}_$date';
-            list.add(NotificationItem(
-              id: notifId,
-              title: 'معاينة معلقة: $buyer',
-              details: 'عقار: $propType - لم يتم تسجيل قرار العميل النهائي بعد',
-              date: date,
-              category: 'معاينة',
-              color: Colors.amberAccent,
-              icon: Icons.visibility,
-              targetScreen: 'المعاينات',
-              isRead: readIds.contains(notifId),
-            ));
-          }
+    for (var insp in inspections) {
+      if (insp is Map) {
+        String status = insp['حالة المعاينة']?.toString() ?? 'تحت المعاينة';
+        String buyer = insp['إسم المشتري']?.toString() ?? 'مشتري';
+        String propType = insp['نوع العقار']?.toString() ?? 'عقار';
+        String date = insp['التاريخ']?.toString() ?? '';
+
+        if (status == 'تحت المعاينة') {
+          String notifId = 'insp_${buyer}_${propType}_$date';
+          list.add(NotificationItem(
+            id: notifId,
+            title: 'معاينة معلقة: $buyer',
+            details: 'عقار: $propType - لم يتم تسجيل قرار العميل النهائي بعد',
+            date: date,
+            category: 'معاينة',
+            color: Colors.amberAccent,
+            icon: Icons.visibility,
+            targetScreen: 'المعاينات',
+            isRead: readIds.contains(notifId),
+          ));
         }
       }
-    } catch (e) {
-      debugPrint('خطأ جلب تنبيهات المعاينات: $e');
     }
   }
 
   /// استخراج تنبيهات الحسابات والتذكيرات المالية
   static void _extractAccountReminderNotifications(List<NotificationItem> list, List<String> readIds) {
-    try {
-      List reminders = AppData.storage['التذكيرات المالية'] ?? [];
-      for (var rem in reminders) {
-        if (rem is Map) {
-          String title = rem['العنوان'] ?? 'تذكير مالي';
-          String type = rem['النوع'] ?? 'التزام';
-          String amount = rem['المبلغ'] ?? '-';
-          String date = rem['التاريخ'] ?? '';
-          String status = rem['الحالة'] ?? 'نشط';
+    var reminders = AppData.storage['التذكيرات المالية'];
+    if (reminders is! List) return;
 
-          if (status == 'نشط') {
-            String notifId = 'rem_${title}_$date';
-            list.add(NotificationItem(
-              id: notifId,
-              title: 'تذكير مالي: $title',
-              details: 'النوع: $type | القيمة: $amount ج.م | استحقاق: $date',
-              date: date,
-              category: 'تذكير مالي',
-              color: Colors.greenAccent,
-              icon: Icons.notifications_active,
-              targetScreen: 'طلبات العملاء',
-              isRead: readIds.contains(notifId),
-            ));
-          }
+    for (var rem in reminders) {
+      if (rem is Map) {
+        String title = rem['العنوان']?.toString() ?? 'تذكير مالي';
+        String type = rem['النوع']?.toString() ?? 'التزام';
+        String amount = rem['المبلغ']?.toString() ?? '-';
+        String date = rem['التاريخ']?.toString() ?? '';
+        String status = rem['الحالة']?.toString() ?? 'نشط';
+
+        if (status == 'نشط') {
+          String notifId = 'rem_${title}_$date';
+          list.add(NotificationItem(
+            id: notifId,
+            title: 'تذكير مالي: $title',
+            details: 'النوع: $type | القيمة: $amount ج.م | استحقاق: $date',
+            date: date,
+            category: 'تذكير مالي',
+            color: Colors.greenAccent,
+            icon: Icons.notifications_active,
+            targetScreen: 'طلبات العملاء',
+            isRead: readIds.contains(notifId),
+          ));
         }
       }
-    } catch (e) {
-      debugPrint('خطأ جلب تنبيهات الحسابات: $e');
     }
   }
 
-  /// تعيين إشعار كمقروء وحفظه محلياً والسحابية دائمياً
+  /// تعيين إشعار كمقروء
   static Future<void> markAsRead(String id) async {
-    if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
-      AppData.storage['read_notifications'] = <String>[];
-    }
-    List readList = AppData.storage['read_notifications']!;
-    if (!readList.contains(id)) {
-      readList.add(id);
-      await LocalStorageService.saveLocally();
-      await CloudSyncService.syncToCloud(isAuto: true);
-    }
+    try {
+      if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
+        AppData.storage['read_notifications'] = <String>[];
+      }
+      List readList = AppData.storage['read_notifications']!;
+      if (!readList.contains(id)) {
+        readList.add(id);
+        await LocalStorageService.saveLocally();
+        CloudSyncService.syncToCloud(isAuto: true);
+      }
+    } catch (_) {}
   }
 
   /// تعيين كافة الإشعارات كمقروءة
   static Future<void> markAllAsRead() async {
-    List<NotificationItem> items = getAllActiveNotifications();
-    if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
-      AppData.storage['read_notifications'] = <String>[];
-    }
-    List readList = AppData.storage['read_notifications']!;
-    for (var item in items) {
-      if (!readList.contains(item.id)) {
-        readList.add(item.id);
+    try {
+      List<NotificationItem> items = getAllActiveNotifications();
+      if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
+        AppData.storage['read_notifications'] = <String>[];
       }
-    }
-    await LocalStorageService.saveLocally();
-    await CloudSyncService.syncToCloud(isAuto: true);
+      List readList = AppData.storage['read_notifications']!;
+      for (var item in items) {
+        if (!readList.contains(item.id)) {
+          readList.add(item.id);
+        }
+      }
+      await LocalStorageService.saveLocally();
+      CloudSyncService.syncToCloud(isAuto: true);
+    } catch (_) {}
   }
 
-  /// 🚀 التوجيه المباشر والفعلي للشاشة المستهدفة فور الضغط على الإشعار
+  /// التوجيه المباشر والآمن للشاشة المستهدفة
   static void _navigateToTargetScreen(BuildContext context, String targetScreen) {
     if (targetScreen.isEmpty) return;
     
     if (SecurityManager.canAccessScreen(targetScreen)) {
+      Widget destinationWidget;
       if (targetScreen == 'طلبات العملاء') {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const CustomerRequestsScreen()),
-        );
+        destinationWidget = const CustomerRequestsScreen();
       } else if (targetScreen == 'المعاينات') {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const InspectionsScreen()),
-        );
+        destinationWidget = const InspectionsScreen();
+      } else {
+        return;
       }
+
+      Navigator.of(context, rootNavigator: true).push(
+        MaterialPageRoute(builder: (context) => destinationWidget),
+      );
     } else {
       SecurityManager.showPermissionDeniedSnackBar(
         context, 
@@ -254,7 +258,7 @@ class NotificationService {
     }
   }
 
-  /// عرض قائمة الإشعارات والتوجيه المباشر عند النقر
+  /// عرض قائمة الإشعارات
   static void showNotificationMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -326,8 +330,8 @@ class NotificationService {
                                     onTap: () async {
                                       await markAsRead(item.id);
                                       if (context.mounted) {
-                                        Navigator.pop(bottomSheetContext); // قفل النافذة
-                                        _navigateToTargetScreen(context, item.targetScreen); // التوجيه الفعلي للشاشة
+                                        Navigator.pop(bottomSheetContext);
+                                        _navigateToTargetScreen(context, item.targetScreen);
                                       }
                                     },
                                     leading: CircleAvatar(

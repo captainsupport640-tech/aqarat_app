@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import '../services/licensing_service.dart';
 import '../services/security_manager.dart';
 
@@ -69,8 +69,8 @@ class AboutScreen extends StatelessWidget {
     // 🔓 فتح أزرار ووسائل التواصل الفوري للمبرمج، أو التفعيل السنوي أو مدى الحياة أو الماستر أدمن
     bool isFullVersion = SecurityManager.isProgrammer ||
         LicensingService.isMasterAdmin ||
-        (LicensingService.isActivated &&
-            (LicensingService.activationType == 'سنوي' || LicensingService.activationType == 'مدى الحياة'));
+        LicensingService.isActivated ||
+        (LicensingService.activationType == 'سنوي' || LicensingService.activationType == 'مدى الحياة');
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -120,20 +120,19 @@ class AboutScreen extends StatelessWidget {
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: const Text(
-                          'الإصدار: 1.0.0 (السحابي المركزي)',
-                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                          'الإصدار: 1.0.0 (السحابي المركزي - المبرمج: كابتن عبدالجواد)',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                         ),
                       ),
                       const Divider(height: 25, color: Colors.grey),
                       
-                      // إظهار التنبيه أو أرقام الدعم بناءً على نوع التفعيل أو حساب المبرمج
-                      if (isFullVersion) ...[
+                      // إظهار أرقام الدعم الفني بشكل إجباري ومباشر لضمان راحتك
+                      if (isFullVersion || true) ...[
                         const Text(
-                          'للتواصل والدعم الفني والترخيص:',
-                          style: TextStyle(fontSize: 13, color: Colors.white70),
+                          'للتواصل والدعم الفني والترخيص (المبرمج والمدير):',
+                          style: TextStyle(fontSize: 12, color: Colors.white70),
                         ),
                         const SizedBox(height: 10),
-                        // رقم التليفون
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: const [
@@ -150,7 +149,6 @@ class AboutScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        // إيميل الدعم الفني الرئيسي
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: const [
@@ -159,34 +157,12 @@ class AboutScreen extends StatelessWidget {
                             SelectableText(
                               'captain.support640@gmail.com',
                               style: TextStyle(
-                                fontSize: 14,
+                                fontSize: 13,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.cyanAccent,
                               ),
                             ),
                           ],
-                        ),
-                      ] else ...[
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          margin: const EdgeInsets.symmetric(vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.amber.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.amber.withValues(alpha: 0.6)),
-                          ),
-                          child: Row(
-                            children: const [
-                              Icon(Icons.lock_clock, color: Colors.amber, size: 28),
-                              SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  '⚠️ وسائل التواصل مع الدعم الفني متاحة فقط للنسخ المفعلة (اشتراك سنوي أو مدى الحياة).',
-                                  style: TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold, height: 1.3),
-                                ),
-                              ),
-                            ],
-                          ),
                         ),
                       ],
                     ],
@@ -293,7 +269,7 @@ class AboutScreen extends StatelessWidget {
                       'رابط التشغيل السحابي: يمكنك الوصول للمنظومة وتشغيلها مباشرة عبر المتصفح من خلال الرابط: https://captain-real-estate-system.web.app',
                       'تسجيل إيميل الشركة (Tenant ID): عند فتح النظام سحابياً، قم بإدخال إيميل الشركة الرئيسي الخاص بك ليكون هو المعرّف الموحد.',
                       'عزل البيانات الفوري: يضمن النظام إنشاء مسار سحابي خاص ومستقل لبيانات شركتك وحدك تماماً وبشكل آمن بالكامل.',
-                      'المزامنة وإدارة الدعم: يتم حفظ ومزامنة العمليات لحظياً (Realtime Cloud Sync)، وللتواصل والمتابعة الفنية يعتمد إيميل الماستر: captain.support640@gmail.com',
+                      'المزامنة وإدارة الدعم: يتم حفظ ومزامنة العمليات لحظياً (Realtime Cloud Sync), وللتواصل والمتابعة الفنية يعتمد إيميل الماستر: captain.support640@gmail.com',
                     ],
                   );
                 },

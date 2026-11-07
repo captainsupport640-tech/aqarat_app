@@ -33,7 +33,8 @@ class _ForRentScreenState extends State<ForRentScreen> {
   ];
 
   String selectedSearchFilter = 'الكل';
-@override
+
+  @override
   void initState() {
     super.initState();
     _startRealtimeListener();
@@ -68,6 +69,7 @@ class _ForRentScreenState extends State<ForRentScreen> {
     AppStorageManager.stopMasterDatabaseListener();
     super.dispose();
   }
+
   void _openImageLink(String link) async {
     if (link.isEmpty || link == '-') return;
 
@@ -504,48 +506,6 @@ class _ForRentScreenState extends State<ForRentScreen> {
                       onPressed: () => Navigator.pop(context),
                     ),
                     const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.print, color: Colors.cyanAccent, size: 24),
-                      tooltip: 'طباعة التقرير الفعلي',
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('جاري طباعة تقرير المعروض للإيجار الحالي...'), backgroundColor: Colors.cyan),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2C2C2C),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      ),
-                      onPressed: () {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (context) => const ForSaleScreen()),
-                        );
-                      },
-                      icon: const Icon(Icons.arrow_right_rounded, color: Colors.amberAccent, size: 22),
-                      label: const Text('الصفحة السابقة', style: TextStyle(fontSize: 11)),
-                    ),
-                    const SizedBox(width: 4),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2C2C2C),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      ),
-                      onPressed: () {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (context) => const InspectionsScreen()),
-                        );
-                      },
-                      icon: const Icon(Icons.arrow_left_rounded, color: Colors.amberAccent, size: 22),
-                      label: const Text('الصفحة التالية', style: TextStyle(fontSize: 11)),
-                    ),
-                    const SizedBox(width: 12),
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.purple.shade800,
@@ -845,7 +805,7 @@ class _ForRentScreenState extends State<ForRentScreen> {
                                           onPressed: () async {
                                             setState(() {
                                               if (!AppData.storage.containsKey('trash_bin') || AppData.storage['trash_bin'] == null) {
-                                                AppData.storage['trash_bin'] = <Map<String, String>>[];
+                                                AppData.storage['trash_bin'] = [];
                                               }
 
                                               Map<String, String> deletedItem = Map<String, String>.from(propertiesList[index]);

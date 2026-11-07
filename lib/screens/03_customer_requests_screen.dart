@@ -416,48 +416,6 @@ class _CustomerRequestsScreenState extends State<CustomerRequestsScreen> {
                       onPressed: () => Navigator.pop(context),
                     ),
                     const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.print, color: Colors.cyanAccent, size: 24),
-                      tooltip: 'طباعة التقرير الفعلي',
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('جاري طباعة تقرير طلبات العملاء الحالي...'), backgroundColor: Colors.cyan),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2C2C2C),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      ),
-                      onPressed: () {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (context) => const BrokersScreen()),
-                        );
-                      },
-                      icon: const Icon(Icons.arrow_right_rounded, color: Colors.amberAccent, size: 22),
-                      label: const Text('الصفحة السابقة', style: TextStyle(fontSize: 11)),
-                    ),
-                    const SizedBox(width: 4),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2C2C2C),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      ),
-                      onPressed: () {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (context) => const ForSaleScreen()),
-                        );
-                      },
-                      icon: const Icon(Icons.arrow_left_rounded, color: Colors.amberAccent, size: 22),
-                      label: const Text('الصفحة التالية', style: TextStyle(fontSize: 11)),
-                    ),
-                    const SizedBox(width: 12),
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.purple.shade800,

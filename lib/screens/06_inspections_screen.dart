@@ -180,59 +180,7 @@ class _InspectionsScreenState extends State<InspectionsScreen> {
                       tooltip: 'الصفحة الرئيسية',
                       onPressed: () => Navigator.pop(context),
                     ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.print, color: Colors.cyanAccent, size: 24),
-                      tooltip: 'طباعة التقرير الفعلي',
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('جاري طباعة تقرير المعاينات الحالي...'), backgroundColor: Colors.cyan),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 12),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2C2C2C),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      ),
-                      onPressed: () {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (context) => const ForRentScreen()),
-                        );
-                      },
-                      icon: const Icon(Icons.arrow_right_rounded, color: Colors.amberAccent, size: 22),
-                      label: const Text('الصفحة السابقة', style: TextStyle(fontSize: 11)),
-                    ),
-                    const SizedBox(width: 4),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2C2C2C),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      ),
-                      onPressed: () {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (context) => const CompletedOperationsScreen()),
-                        );
-                      },
-                      icon: const Icon(Icons.arrow_left_rounded, color: Colors.amberAccent, size: 22),
-                      label: const Text('الصفحة التالية', style: TextStyle(fontSize: 11)),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              color: const Color(0xFF1E1E1E),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
+               
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF333333)),
                       onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const ClientsScreen())),
