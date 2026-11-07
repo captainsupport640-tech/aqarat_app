@@ -14,7 +14,7 @@ import 'security_manager.dart';
 
 class FileBackupService {
 
-  /// الحصول على المسار الحقيقي لمجلد المستندات (Documents/Aqarat_Backups)
+  /// الحصول على المسار المباشر لمجلد المستندات العامة
   static Future<Directory?> getDocumentsDirectory() async {
     if (kIsWeb) return null;
     try {
@@ -80,9 +80,8 @@ class FileBackupService {
     });
   }
 
-  /// 📄 🔒 دالة إنشاء وتوليد ملف PDF (مقتصرة حصرياً على المدير والمبرمج لمنع تسريب الداتا)
+  /// 📄 تصدير PDF عبر نافذة الطباعة والحفظ المباشرة (تتجاوز حظر الويندوز بدون مكتبات خارجية)
   static Future<bool> exportPdfToDocuments(BuildContext context) async {
-    // 🛡️ فحص حظر الموظفين ومدخلي البيانات
     if (!SecurityManager.isAdmin && !SecurityManager.isProgrammer) {
       SecurityManager.showPermissionDeniedSnackBar(
         context,
@@ -93,8 +92,6 @@ class FileBackupService {
 
     try {
       final pdf = pw.Document();
-
-      // تحميل خط يدعم اللغة العربية للـ PDF
       final fontData = await PdfGoogleFonts.cairoRegular();
       final fontBoldData = await PdfGoogleFonts.cairoBold();
 
@@ -109,7 +106,6 @@ class FileBackupService {
           build: (pw.Context context) {
             List<pw.Widget> widgets = [];
 
-            // ترويسة التقرير
             widgets.add(
               pw.Header(
                 level: 0,
@@ -131,7 +127,6 @@ class FileBackupService {
 
             widgets.add(pw.SizedBox(height: 10));
 
-            // تجميع وتنسيق البيانات من كافة أقسام المنظومة
             AppData.storage.forEach((sectionTitle, items) {
               if (items.isNotEmpty) {
                 widgets.add(
@@ -178,22 +173,14 @@ class FileBackupService {
         ),
       );
 
-      // حفظ الملف الحقيقي داخل مجلد Documents/Aqarat_Backups
-      final docsFolder = await getDocumentsDirectory();
-      if (docsFolder == null) return false;
+      final pdfBytes = await pdf.save();
 
-      final pdfFile = File('${docsFolder.path}/تقرير_المنظومة_${DateTime.now().millisecondsSinceEpoch}.pdf');
-      await pdfFile.writeAsBytes(await pdf.save());
+      // فتح نافذة المعاينة والطباعة الحية التفاعلية من نظام الويندوز مباشرة (Save as PDF)
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => pdfBytes,
+        name: 'تقرير_المنظومة_${DateTime.now().millisecondsSinceEpoch}.pdf',
+      );
 
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ تم حفظ ملف الـ PDF بنجاح في:\n${pdfFile.path}'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
       return true;
     } catch (e) {
       debugPrint('خطأ إنشاء وتصدير الـ PDF: $e');
@@ -209,9 +196,8 @@ class FileBackupService {
     }
   }
 
-  /// 🔒 تنفيذ النسخ الاحتياطي (مقتصر حصرياً على المدير والمبرمج)
+  /// 🔒 النسخ الاحتياطي التلقائي داخل مجلد المستندات الخاص بالمنظومة
   static Future<bool> backupToFile(BuildContext context) async {
-    // 🛡️ فحص حظر النسخ المحلي للموظفين
     if (!SecurityManager.isAdmin && !SecurityManager.isProgrammer) {
       SecurityManager.showPermissionDeniedSnackBar(
         context,
@@ -235,7 +221,6 @@ class FileBackupService {
 
       String? localSavedPath;
       if (!kIsWeb) {
-        await LocalStorageService.exportBackupToDocumentsAuto();
         File? file = await _getBackupFile();
         if (file != null) {
           String jsonData = jsonEncode(AppData.storage);
@@ -252,7 +237,7 @@ class FileBackupService {
           SnackBar(
             content: Text(
               driveSuccess
-                  ? '✅ تم النسخ الاحتياطي وحفظه في Documents وتحديث Google Drive بنجاح!'
+                  ? '✅ تم النسخ الاحتياطي وحفظه في ($localSavedPath) وتحديث Google Drive بنجاح!'
                   : '⚠️ تم حفظ البيانات في ($localSavedPath)، وتعذر اتصال السحابة.',
             ),
             backgroundColor: driveSuccess ? Colors.green : Colors.orange,
@@ -276,9 +261,8 @@ class FileBackupService {
     }
   }
 
-  /// 🔒 استعادة البيانات من ملف (مقتصرة على المدير والمبرمج)
+  /// 🔒 استعادة البيانات الشاملة
   static Future<bool> restoreFromFile(BuildContext context) async {
-    // 🛡️ فحص حظر الاستعادة للموظفين
     if (!SecurityManager.isAdmin && !SecurityManager.isProgrammer) {
       SecurityManager.showPermissionDeniedSnackBar(
         context,
@@ -303,19 +287,14 @@ class FileBackupService {
       await LocalStorageService.loadLocally();
 
       if (!kIsWeb) {
-        bool imported = await LocalStorageService.importBackupFromFile();
-        if (imported) {
-          restoredFromAny = true;
-        } else {
-          File? file = await _getBackupFile();
-          if (file != null && await file.exists()) {
-            try {
-              String jsonString = await file.readAsString();
-              Map<String, dynamic> localFileData = jsonDecode(jsonString);
-              _mergeDataIntoAppData(localFileData);
-              restoredFromAny = true;
-            } catch (_) {}
-          }
+        File? file = await _getBackupFile();
+        if (file != null && await file.exists()) {
+          try {
+            String jsonString = await file.readAsString();
+            Map<String, dynamic> localFileData = jsonDecode(jsonString);
+            _mergeDataIntoAppData(localFileData);
+            restoredFromAny = true;
+          } catch (_) {}
         }
       }
 

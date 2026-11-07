@@ -5,6 +5,8 @@ import '../app_data.dart';
 import 'local_storage_service.dart';
 import 'cloud_sync_service.dart';
 import 'security_manager.dart';
+import '../screens/03_customer_requests_screen.dart';
+import '../screens/06_inspections_screen.dart';
 
 class NotificationItem {
   final String id;
@@ -59,8 +61,8 @@ class NotificationService {
     if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
       AppData.storage['read_notifications'] = <String>[];
     }
-    final rawList = AppData.storage['read_notifications']!;
-    return rawList.map((e) => e.toString()).toList();
+    final List rawList = AppData.storage['read_notifications']!;
+    return rawList.map((e) => e.toString().trim()).toList();
   }
 
   /// جلب عدد الإشعارات غير المقروءة فقط للعداد الخارجي (الجرس) بدقة تامة
@@ -188,7 +190,7 @@ class NotificationService {
               category: 'تذكير مالي',
               color: Colors.greenAccent,
               icon: Icons.notifications_active,
-              targetScreen: 'تقارير',
+              targetScreen: 'طلبات العملاء',
               isRead: readIds.contains(notifId),
             ));
           }
@@ -228,20 +230,22 @@ class NotificationService {
     await CloudSyncService.syncToCloud(isAuto: true);
   }
 
-  /// التوجيه المباشر للشاشة المستهدفة حسب صلاحية المستخدم
+  /// 🚀 التوجيه المباشر والفعلي للشاشة المستهدفة فور الضغط على الإشعار
   static void _navigateToTargetScreen(BuildContext context, String targetScreen) {
     if (targetScreen.isEmpty) return;
     
-    // التاكد من صلاحية الوصول
     if (SecurityManager.canAccessScreen(targetScreen)) {
-      // توجيه المستخدم حسب اسم الشاشة
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('⚡ جاري التوجيه المباشر إلى: $targetScreen'),
-          backgroundColor: Colors.blueAccent,
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      if (targetScreen == 'طلبات العملاء') {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const CustomerRequestsScreen()),
+        );
+      } else if (targetScreen == 'المعاينات') {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const InspectionsScreen()),
+        );
+      }
     } else {
       SecurityManager.showPermissionDeniedSnackBar(
         context, 
@@ -323,11 +327,11 @@ class NotificationService {
                                       await markAsRead(item.id);
                                       if (context.mounted) {
                                         Navigator.pop(bottomSheetContext); // قفل النافذة
-                                        _navigateToTargetScreen(context, item.targetScreen); // توجيه
+                                        _navigateToTargetScreen(context, item.targetScreen); // التوجيه الفعلي للشاشة
                                       }
                                     },
                                     leading: CircleAvatar(
-                                      backgroundColor: item.color.withOpacity(0.2),
+                                      backgroundColor: item.color.withValues(alpha: 0.2),
                                       child: Icon(item.icon, color: item.color, size: 20),
                                     ),
                                     title: Text(

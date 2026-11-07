@@ -14,7 +14,6 @@ import 'services/file_backup_service.dart';
 import 'services/security_manager.dart';
 import 'services/cloud_sync_service.dart';
 import 'services/support_service.dart';
-import 'services/programmer_support_dashboard.dart';
 import 'screens/00_login_screen.dart';
 import 'screens/01_clients_screen.dart';
 import 'screens/02_brokers_screen.dart';
@@ -108,8 +107,7 @@ class Aqarat extends StatelessWidget {
           elevation: 2,
         ),
       ),
-      // التوجيه الذكي المباشر: إذا كان المبرمج يفتح لوحة التحكم، وإلا يفتح شاشة الدخول أولاً
-      home: SecurityManager.isProgrammer ? const ProgrammerSupportDashboard() : const LoginScreen(),
+      home: const LoginScreen(),
     );
   }
 }
@@ -369,18 +367,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
     List results = [];
 
+    // التفتيش المباشر بدون فحص النوع الزائد لإلغاء التحذير
     AppData.storage.forEach((sectionKey, listData) {
       for (var item in listData) {
-        bool isMatch = item.entries.any((entry) {
-          String val = entry.value.toString().toLowerCase();
-          return val.contains(cleanQuery);
-        });
-
-        if (isMatch) {
-          results.add({
-            'section': sectionKey,
-            'data': Map<String, dynamic>.from(item),
+        if (item is Map) {
+          bool isMatch = item.entries.any((entry) {
+            String val = entry.value.toString().toLowerCase();
+            return val.contains(cleanQuery);
           });
+
+          if (isMatch) {
+            results.add({
+              'section': sectionKey,
+              'data': Map<String, dynamic>.from(item),
+            });
+          }
         }
       }
     });
@@ -389,8 +390,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _searchResults = results;
       _isSearching = true;
     });
-  }
-  
+  }  
   void _showAddEmployeeDialog(BuildContext context) {
     final TextEditingController empNameController = TextEditingController();
     final TextEditingController empUserController = TextEditingController();
@@ -792,8 +792,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             minimumSize: const Size(double.infinity, 42),
                             alignment: Alignment.centerRight,
                           ),
-                          icon: const Icon(Icons.backup, color: Colors.white),
-                          label: const Text('نسخ احتياطي محلي + تصدير ملف', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          icon: const Icon(Icons.folder_open, color: Colors.white),
+                          label: const Text('نسخ احتياطي محلي + اختيار مجلد التنسيق', style: TextStyle(color: Colors.white, fontSize: 13)),
                           onPressed: () async {
                             await FileBackupService.backupToFile(context);
                           },
@@ -821,7 +821,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             alignment: Alignment.centerRight,
                           ),
                           icon: const Icon(Icons.wifi_find, color: Colors.white),
-                          label: const Text('بحث أوتوماتيكي عن أجهزة الشبكة (إضافة / تجاهل)', style: TextStyle(color: Colors.white, fontSize: 13)),
+                          label: const Text('بحث يدوي عن أجهزة الشبكة (Wi-Fi)', style: TextStyle(color: Colors.white, fontSize: 13)),
                           onPressed: () {
                             Navigator.pop(context);
                             Navigator.push(
@@ -1246,97 +1246,48 @@ class _HomeScreenState extends State<HomeScreen> {
                     : Center(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 700),
-                          child: Stack(
-                            children: [
-                              LayoutBuilder(
-                                builder: (context, constraints) {
-                                  int crossAxisCount = constraints.maxWidth > 550 ? 3 : 2;
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              int crossAxisCount = constraints.maxWidth > 550 ? 3 : 2;
 
-                                  return GridView.builder(
-                                    itemCount: menuItems.length,
-                                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: crossAxisCount,
-                                      crossAxisSpacing: 14,
-                                      mainAxisSpacing: 14,
-                                      childAspectRatio: 1.5,
+                              return GridView.builder(
+                                itemCount: menuItems.length,
+                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: crossAxisCount,
+                                  crossAxisSpacing: 14,
+                                  mainAxisSpacing: 14,
+                                  childAspectRatio: 1.5,
+                                ),
+                                itemBuilder: (context, index) {
+                                  final item = menuItems[index];
+                                  return ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: item['color'],
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      elevation: 4,
                                     ),
-                                    itemBuilder: (context, index) {
-                                      final item = menuItems[index];
-                                      return ElevatedButton(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: item['color'],
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                          elevation: 4,
-                                        ),
-                                        onPressed: isGuest
-                                            ? null
-                                            : () => Navigator.push(
-                                                  context,
-                                                  MaterialPageRoute(builder: (context) => item['screen']),
-                                                ),
-                                        child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Icon(item['icon'], size: 32, color: Colors.white),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              item['title'],
-                                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-                                              textAlign: TextAlign.center,
+                                    onPressed: isGuest
+                                        ? null
+                                        : () => Navigator.push(
+                                              context,
+                                              MaterialPageRoute(builder: (context) => item['screen']),
                                             ),
-                                          ],
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(item['icon'], size: 32, color: Colors.white),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          item['title'],
+                                          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                          textAlign: TextAlign.center,
                                         ),
-                                      );
-                                    },
+                                      ],
+                                    ),
                                   );
                                 },
-                              ),
-                              if (isGuest)
-                                Positioned.fill(
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      SecurityManager.showPermissionDeniedSnackBar(
-                                        context,
-                                        'حساب ضيف: هذه الأقسام للتصفح فقط. يمكنك فقط الاطلاع على شرح المنظومة من أعلى الشاشة.',
-                                      );
-                                    },
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withValues(alpha: 0.55),
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
-                                      child: Center(
-                                        child: Container(
-                                          padding: const EdgeInsets.all(16),
-                                          margin: const EdgeInsets.symmetric(horizontal: 20),
-                                          decoration: const BoxDecoration(
-                                            color: Color(0xFF2C2C2C),
-                                            borderRadius: BorderRadius.all(Radius.circular(12)),
-                                            border: Border.fromBorderSide(BorderSide(color: Colors.cyanAccent, width: 1.5)),
-                                          ),
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: const [
-                                              Icon(Icons.lock_outline, color: Colors.cyanAccent, size: 40),
-                                              SizedBox(height: 10),
-                                              Text(
-                                                'وضع الضيف (معاينة تصفح فقط)',
-                                                style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 16),
-                                              ),
-                                              SizedBox(height: 6),
-                                              Text(
-                                                'جميع أقسام البيانات محمية ولا يمكن الدخول إليها.\nاضغط على زر (حول المنظومة ⓘ) في الأعلى لشرح وتفاصيل المنظومة.',
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(color: Colors.white70, fontSize: 12),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
+                              );
+                            },
                           ),
                         ),
                       ),
@@ -1348,7 +1299,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// 🚀 الاستدعاء الصارم المباشر لخدمة طلب الدعم الفني
   void _showRemoteSupportDialog(BuildContext context) {
     SupportService.requestRemoteSupport(context);
   }

@@ -3,8 +3,15 @@ import java.util.Properties
 
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
+
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+} else {
+    // قراءة البيانات من GitHub Secrets في حالة البناء السحابي
+    System.getenv("KEY_ALIAS")?.let { keystoreProperties["keyAlias"] = it }
+    System.getenv("KEY_PASSWORD")?.let { keystoreProperties["keyPassword"] = it }
+    System.getenv("STORE_PASSWORD")?.let { keystoreProperties["storePassword"] = it }
+    System.getenv("STORE_FILE_PATH")?.let { keystoreProperties["storeFile"] = it }
 }
 
 plugins {
@@ -34,7 +41,7 @@ android {
         create("release") {
             keyAlias = keystoreProperties.getProperty("keyAlias")
             keyPassword = keystoreProperties.getProperty("keyPassword")
-            storeFile = keystoreProperties.getProperty("storeFile")?.let { file(it) }
+            storeFile = keystoreProperties.getProperty("storeFile")?.let { file(it) } ?: rootProject.file("upload-keystore.jks")
             storePassword = keystoreProperties.getProperty("storePassword")
         }
     }
@@ -51,7 +58,8 @@ android {
 
     buildTypes {
         release {
-            signingConfig = if (keystorePropertiesFile.exists() && keystoreProperties.getProperty("storeFile") != null) {
+            // اعتماد التوقيع بناءً على توفر المفتاح وليس على وجود الملف المحلي فقط
+            signingConfig = if (keystoreProperties.getProperty("keyAlias") != null) {
                 signingConfigs.getByName("release")
             } else {
                 signingConfigs.getByName("debug")

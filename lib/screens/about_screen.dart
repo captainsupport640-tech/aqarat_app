@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/licensing_service.dart';
+import '../services/security_manager.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -65,9 +66,11 @@ class AboutScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // التحقق من أن التفعيل إما سنوي أو مدى الحياة
-    bool isFullVersion = LicensingService.isActivated &&
-        (LicensingService.activationType == 'سنوي' || LicensingService.activationType == 'مدى الحياة');
+    // 🔓 فتح أزرار ووسائل التواصل الفوري للمبرمج، أو التفعيل السنوي أو مدى الحياة أو الماستر أدمن
+    bool isFullVersion = SecurityManager.isProgrammer ||
+        LicensingService.isMasterAdmin ||
+        (LicensingService.isActivated &&
+            (LicensingService.activationType == 'سنوي' || LicensingService.activationType == 'مدى الحياة'));
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -88,7 +91,7 @@ class AboutScreen extends StatelessWidget {
                 color: const Color(0xFF252525),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(15),
-                  side: BorderSide(color: Colors.blueAccent.withOpacity(0.4)),
+                  side: BorderSide(color: Colors.blueAccent.withValues(alpha: 0.4)),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(20.0),
@@ -123,7 +126,7 @@ class AboutScreen extends StatelessWidget {
                       ),
                       const Divider(height: 25, color: Colors.grey),
                       
-                      // إظهار التنبيه أو أرقام الدعم بناءً على نوع التفعيل
+                      // إظهار التنبيه أو أرقام الدعم بناءً على نوع التفعيل أو حساب المبرمج
                       if (isFullVersion) ...[
                         const Text(
                           'للتواصل والدعم الفني والترخيص:',
@@ -168,9 +171,9 @@ class AboutScreen extends StatelessWidget {
                           padding: const EdgeInsets.all(12),
                           margin: const EdgeInsets.symmetric(vertical: 4),
                           decoration: BoxDecoration(
-                            color: Colors.amber.withOpacity(0.12),
+                            color: Colors.amber.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.amber.withOpacity(0.6)),
+                            border: Border.all(color: Colors.amber.withValues(alpha: 0.6)),
                           ),
                           child: Row(
                             children: const [
@@ -316,13 +319,13 @@ class AboutScreen extends StatelessWidget {
       color: const Color(0xFF222222),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.cyanAccent.withOpacity(0.2)),
+        side: BorderSide(color: Colors.cyanAccent.withValues(alpha: 0.2)),
       ),
       child: ListTile(
         onTap: onTap,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: CircleAvatar(
-          backgroundColor: Colors.blueAccent.withOpacity(0.2),
+          backgroundColor: Colors.blueAccent.withValues(alpha: 0.2),
           child: Text(
             stepNumber,
             style: const TextStyle(
