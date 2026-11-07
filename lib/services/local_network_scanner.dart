@@ -14,11 +14,10 @@ class NetworkDevice {
 }
 
 class LocalNetworkScannerService {
-  // دالة ذكية للبحث الفعلي عن الأجهزة المتاحة على نفس الشبكة المحلية
+  /// دالة فحص الشبكة المحلية الحقيقية بالكامل (بدون أجهزة وهمية)
   static Future<List<NetworkDevice>> scanLocalNetwork() async {
     List<NetworkDevice> foundDevices = [];
     try {
-      // الحصول على عنوان آي بي الجهاز الحالي لمعرفة النطاق (Subnet)
       final interfaces = await NetworkInterface.list(
         includeLoopback: false,
         type: InternetAddressType.IPv4,
@@ -28,34 +27,24 @@ class LocalNetworkScannerService {
         for (var interface in interfaces) {
           for (var addr in interface.addresses) {
             String localIp = addr.address;
-            // استخلاص نطاق الشبكة (مثلاً 192.168.1)
             List<String> parts = localIp.split('.');
             if (parts.length == 4) {
               String subnet = "${parts[0]}.${parts[1]}.${parts[2]}";
 
-              // محاولة فحص الأجهزة النشطة في النطاق المحلي (مثلاً من 1 إلى 20 كبداية سريعة وآمنة)
-              for (int i = 1; i <= 20; i++) {
+              // فحص متوازي للأجهزة الحقيقية من 1 إلى 50 على الشبكة
+              List<Future<NetworkDevice?>> scanTasks = [];
+              for (int i = 1; i <= 50; i++) {
                 String targetIp = "$subnet.$i";
-                if (targetIp == localIp) continue; // استثناء جهازك الحالي
+                if (targetIp == localIp) continue; // تجنب الجهاز الحالي
 
-                try {
-                  // محاولة الاتصال بـ Socket محلي لاختبار وجود استجابة من جهاز آخر فاتح المنظومة أو الشبكة
-                  final socket = await Socket.connect(
-                    targetIp,
-                    80,
-                    timeout: const Duration(milliseconds: 150),
-                  );
-                  socket.destroy();
+                scanTasks.add(_testDeviceConnection(targetIp));
+              }
 
-                  foundDevices.add(
-                    NetworkDevice(
-                      ipAddress: targetIp,
-                      deviceName: "جهاز شبكة محلي (${targetIp})",
-                      isConnected: false,
-                    ),
-                  );
-                } catch (_) {
-                  // الجهاز غير متصل أو مغلق، يتم تجاوزه بذكاء وبدون أي تعليق في التطبيق
+              // تجميع نتائج الفحص الحقيقي
+              final results = await Future.wait(scanTasks);
+              for (var dev in results) {
+                if (dev != null) {
+                  foundDevices.add(dev);
                 }
               }
             }
@@ -66,22 +55,32 @@ class LocalNetworkScannerService {
       debugPrint("خطأ في فحص الشبكة المحلية: $e");
     }
 
-    // إذا لم يتم العثور على أجهزة وهمية، نعرض قائمة تجريبية توضيحية لضمان عمل الواجهة بسلاسة
-    if (foundDevices.isEmpty) {
-      foundDevices.add(
-        NetworkDevice(
-          ipAddress: "192.168.1.15",
-          deviceName: "جهاز الكابتن - كمبيوتر رئيسي",
-          isConnected: false,
-        ),
-      );
-    }
-
     return foundDevices;
+  }
+
+  /// اختبار اتصال Socket حقيقي بالجهاز على المنافذ الشائعة
+  static Future<NetworkDevice?> _testDeviceConnection(String targetIp) async {
+    List<int> portsToTest = [80, 8080, 443, 554];
+    for (int port in portsToTest) {
+      try {
+        final socket = await Socket.connect(
+          targetIp,
+          port,
+          timeout: const Duration(milliseconds: 120),
+        );
+        socket.destroy();
+        return NetworkDevice(
+          ipAddress: targetIp,
+          deviceName: "جهاز شبكة نشط ($targetIp)",
+          isConnected: false,
+        );
+      } catch (_) {}
+    }
+    return null;
   }
 }
 
-// واجهة عرض الأجهزة الشبيهة بشبكات الواي فاي (إضافة / تجاهل)
+// واجهة عرض الأجهزة الحقيقية على الشبكة
 class NetworkScannerScreen extends StatefulWidget {
   const NetworkScannerScreen({Key? key}) : super(key: key);
 
@@ -117,7 +116,7 @@ class _NetworkScannerScreenState extends State<NetworkScannerScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF1E1E1E),
       appBar: AppBar(
-        title: const Text("البحث عن أجهزة الشبكة المحلية", style: TextStyle(color: Colors.white)),
+        title: const Text("الأجهزة المتصلة بالشبكة المحلية", style: TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF2D2D2D),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -131,14 +130,19 @@ class _NetworkScannerScreenState extends State<NetworkScannerScreen> {
               icon: _isScanning 
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) 
                   : const Icon(Icons.refresh),
-              label: Text(_isScanning ? "جاري الفحص والبحث بالواي فاي..." : "إعادة البحث عن أجهزة الشبكة"),
+              label: Text(_isScanning ? "جاري فحص الأجهزة الحقيقية..." : "إعادة البحث عن أجهزة الشبكة"),
             ),
           ),
           Expanded(
             child: _isScanning && _devices.isEmpty
                 ? const Center(child: CircularProgressIndicator(color: Colors.amber))
                 : _devices.isEmpty
-                    ? const Center(child: Text("لا توجد أجهزة متصلة بالشبكة حالياً", style: TextStyle(color: Colors.grey)))
+                    ? const Center(
+                        child: Text(
+                          "لم يتم العثور على أجهزة نشطة أخرى على نفس الشبكة حالياً",
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      )
                     : ListView.builder(
                         itemCount: _devices.length,
                         itemBuilder: (context, index) {
@@ -147,23 +151,33 @@ class _NetworkScannerScreenState extends State<NetworkScannerScreen> {
                             color: const Color(0xFF2D2D2D),
                             margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             child: ListTile(
-                              leading: const Icon(Icons.wifi, color: Colors.amber),
+                              leading: Icon(
+                                device.isConnected ? Icons.wifi_tethering : Icons.wifi,
+                                color: device.isConnected ? Colors.greenAccent : Colors.amber,
+                              ),
                               title: Text(device.deviceName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                               subtitle: Text("IP: ${device.ipAddress}", style: const TextStyle(color: Colors.grey)),
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   ElevatedButton(
-                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: device.isConnected ? Colors.grey : Colors.green,
+                                      foregroundColor: Colors.white,
+                                    ),
                                     onPressed: () {
                                       setState(() {
-                                        device.isConnected = true;
+                                        device.isConnected = !device.isConnected;
                                       });
                                       ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text("تم ربط الجهاز ${device.ipAddress} بنجاح!")),
+                                        SnackBar(
+                                          content: Text(device.isConnected 
+                                              ? "تم ربط الجهاز ${device.ipAddress} بنجاح!" 
+                                              : "تم فك ربط الجهاز ${device.ipAddress}"),
+                                        ),
                                       );
                                     },
-                                    child: const Text("إضافة"),
+                                    child: Text(device.isConnected ? "مربوط" : "إضافة"),
                                   ),
                                   const SizedBox(width: 8),
                                   TextButton(

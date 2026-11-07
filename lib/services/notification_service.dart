@@ -4,6 +4,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../app_data.dart';
 import 'local_storage_service.dart';
 import 'cloud_sync_service.dart';
+import 'security_manager.dart';
 
 class NotificationItem {
   final String id;
@@ -13,6 +14,7 @@ class NotificationItem {
   final String category; // 'طلب' | 'معاينة' | 'تذكير مالي' | 'نظام'
   final Color color;
   final IconData icon;
+  final String targetScreen; // الشاشة المستهدفة للتوجيه المباشر
   bool isRead;
 
   NotificationItem({
@@ -23,36 +25,32 @@ class NotificationItem {
     required this.category,
     required this.color,
     required this.icon,
+    this.targetScreen = '',
     this.isRead = false,
   });
 }
 
 class NotificationService {
   
-  /// طلب كافة الصلاحيات المطلوبة (للأندرويد والكمبيوتر) فور بدء تشغيل الإشعارات
+  /// طلب كافة الصلاحيات المطلوبة فور بدء تشغيل الإشعارات
   static Future<void> requestNotificationPermissions() async {
     if (Platform.isAndroid) {
       try {
-        // 1. طلب صلاحية الإشعارات والتخزين
         await [
           Permission.notification,
           Permission.storage,
         ].request();
 
-        // 2. طلب صلاحية الظهور فوق التطبيقات الأخرى (System Alert Window)
         if (await Permission.systemAlertWindow.isDenied) {
           await Permission.systemAlertWindow.request();
         }
 
-        // 3. طلب صلاحية إدارة الملفات للأندرويد الحديث
         if (await Permission.manageExternalStorage.isDenied) {
           await Permission.manageExternalStorage.request();
         }
       } catch (e) {
-        debugPrint('⚠️ خطأ أثناء طلب صلاحيات الإشعارات على الأندرويد: $e');
+        debugPrint('⚠️ خطأ أثناء طلب صلاحيات الإشعارات: $e');
       }
-    } else if (Platform.isWindows) {
-      debugPrint('🖥️ التطبيق يعمل على نظام ويندوز، صلاحيات الإشعارات مفعلة تلقائياً.');
     }
   }
 
@@ -71,18 +69,18 @@ class NotificationService {
     return activeUnread.length;
   }
 
-  /// جلب جميع التنبيهات النشطة وربطها بالملفات الداخلية بشكل مباشر
+  /// جلب جميع التنبيهات النشطة وربطها بالملفات الداخلية
   static List<NotificationItem> getAllActiveNotifications({bool unreadOnly = false}) {
     List<NotificationItem> notifications = [];
     List<String> readIds = _getReadIds();
 
-    // 1️⃣ تنبيهات شاشة طلبات العملاء من البيانات الداخلية الفعلية
+    // 1️⃣ تنبيهات شاشة طلبات العملاء
     _extractCustomerRequestNotifications(notifications, readIds);
 
-    // 2️⃣ تنبيهات شاشة المعاينات من الملفات الداخلية الفعلية
+    // 2️⃣ تنبيهات شاشة المعاينات
     _extractInspectionNotifications(notifications, readIds);
 
-    // 3️⃣ تنبيهات شاشة الحسابات والتذكيرات المالية الفعلية
+    // 3️⃣ تنبيهات الحسابات والتذكيرات المالية
     _extractAccountReminderNotifications(notifications, readIds);
 
     if (unreadOnly) {
@@ -125,6 +123,7 @@ class NotificationService {
               category: 'طلب',
               color: Colors.blueAccent,
               icon: Icons.person_search,
+              targetScreen: 'طلبات العملاء',
               isRead: readIds.contains(notifId),
             ));
           }
@@ -156,6 +155,7 @@ class NotificationService {
               category: 'معاينة',
               color: Colors.amberAccent,
               icon: Icons.visibility,
+              targetScreen: 'المعاينات',
               isRead: readIds.contains(notifId),
             ));
           }
@@ -166,7 +166,7 @@ class NotificationService {
     }
   }
 
-  /// استخراج تنبيهات الحسابات والتذكيرات المالية الإيجارية
+  /// استخراج تنبيهات الحسابات والتذكيرات المالية
   static void _extractAccountReminderNotifications(List<NotificationItem> list, List<String> readIds) {
     try {
       List reminders = AppData.storage['التذكيرات المالية'] ?? [];
@@ -188,6 +188,7 @@ class NotificationService {
               category: 'تذكير مالي',
               color: Colors.greenAccent,
               icon: Icons.notifications_active,
+              targetScreen: 'تقارير',
               isRead: readIds.contains(notifId),
             ));
           }
@@ -198,7 +199,7 @@ class NotificationService {
     }
   }
 
-  /// تعيين إشعار كمقروء وحفظه محلياً والسحابية بشكل دائم
+  /// تعيين إشعار كمقروء وحفظه محلياً والسحابية دائمياً
   static Future<void> markAsRead(String id) async {
     if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
       AppData.storage['read_notifications'] = <String>[];
@@ -211,7 +212,7 @@ class NotificationService {
     }
   }
 
-  /// تعيين كافة الإشعارات الظاهرة كمقروءة وربطها بالشاشات والملفات بشكل جذري
+  /// تعيين كافة الإشعارات كمقروءة
   static Future<void> markAllAsRead() async {
     List<NotificationItem> items = getAllActiveNotifications();
     if (!AppData.storage.containsKey('read_notifications') || AppData.storage['read_notifications'] == null) {
@@ -227,7 +228,29 @@ class NotificationService {
     await CloudSyncService.syncToCloud(isAuto: true);
   }
 
-  /// عرض قائمة الإشعارات غير المقروءة فقط وتحديث القائمة فوراً عند الضغط
+  /// التوجيه المباشر للشاشة المستهدفة حسب صلاحية المستخدم
+  static void _navigateToTargetScreen(BuildContext context, String targetScreen) {
+    if (targetScreen.isEmpty) return;
+    
+    // التاكد من صلاحية الوصول
+    if (SecurityManager.canAccessScreen(targetScreen)) {
+      // توجيه المستخدم حسب اسم الشاشة
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('⚡ جاري التوجيه المباشر إلى: $targetScreen'),
+          backgroundColor: Colors.blueAccent,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } else {
+      SecurityManager.showPermissionDeniedSnackBar(
+        context, 
+        'عفواً، لا تملك صلاحية الوصول إلى قسم $targetScreen'
+      );
+    }
+  }
+
+  /// عرض قائمة الإشعارات والتوجيه المباشر عند النقر
   static void showNotificationMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -298,7 +321,10 @@ class NotificationService {
                                   child: ListTile(
                                     onTap: () async {
                                       await markAsRead(item.id);
-                                      setSheetState(() {});
+                                      if (context.mounted) {
+                                        Navigator.pop(bottomSheetContext); // قفل النافذة
+                                        _navigateToTargetScreen(context, item.targetScreen); // توجيه
+                                      }
                                     },
                                     leading: CircleAvatar(
                                       backgroundColor: item.color.withOpacity(0.2),

@@ -14,3 +14,15 @@ aqarat_backup.json
 *.so
 *.dylib
 *.bat
+# Flutter & Dart Temporary Files
+.dart_tool/
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+output/
+
+# Batch Files
+*.bat
+*.cmd

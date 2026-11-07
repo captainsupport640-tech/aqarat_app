@@ -2,7 +2,6 @@
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'services/auto_save_service.dart';
@@ -14,6 +13,8 @@ import 'services/local_storage_service.dart';
 import 'services/file_backup_service.dart';
 import 'services/security_manager.dart';
 import 'services/cloud_sync_service.dart';
+import 'services/support_service.dart';
+import 'services/programmer_support_dashboard.dart';
 import 'screens/00_login_screen.dart';
 import 'screens/01_clients_screen.dart';
 import 'screens/02_brokers_screen.dart';
@@ -107,7 +108,8 @@ class Aqarat extends StatelessWidget {
           elevation: 2,
         ),
       ),
-      home: const LoginScreen(),
+      // التوجيه الذكي المباشر: إذا كان المبرمج يفتح لوحة التحكم، وإلا يفتح شاشة الدخول أولاً
+      home: SecurityManager.isProgrammer ? const ProgrammerSupportDashboard() : const LoginScreen(),
     );
   }
 }
@@ -812,7 +814,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           },
                         ),
                         const SizedBox(height: 10),
-                        // زر البحث الأوتوماتيكي عن أجهزة الشبكة في الإعدادات مع (إضافة / تجاهل)
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.indigo.shade800,
@@ -821,16 +822,15 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           icon: const Icon(Icons.wifi_find, color: Colors.white),
                           label: const Text('بحث أوتوماتيكي عن أجهزة الشبكة (إضافة / تجاهل)', style: TextStyle(color: Colors.white, fontSize: 13)),
-                         onPressed: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const NetworkScannerScreen()),
-                );
-              },
-            ), // قفلة زر البحث عن أجهزة الشبكة
-            const SizedBox(height: 10),
-                        // زر تصدير المنظومة بالكامل إلى ملف PDF من الإعدادات
+                          onPressed: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const NetworkScannerScreen()),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 10),
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.deepPurple.shade800,
@@ -840,15 +840,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
                           label: const Text('تصدير المنظومة بالكامل إلى ملف PDF', style: TextStyle(color: Colors.white, fontSize: 13)),
                           onPressed: () async {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('⏳ جاري تصدير بيانات وتقارير المنظومة بالكامل إلى ملف PDF...'), backgroundColor: Colors.blue, duration: Duration(seconds: 2)),
-                            );
-                            await Future.delayed(const Duration(seconds: 2));
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('✅ تم تصدير وحفظ المنظومة بالكامل في ملف PDF بنجاح!'), backgroundColor: Colors.green),
-                              );
-                            }
+                            await FileBackupService.exportPdfToDocuments(context);
                           },
                         ),
                         const SizedBox(height: 10),
@@ -873,7 +865,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           decoration: BoxDecoration(
                             color: const Color(0xFF282828),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.amber.withOpacity(0.4)),
+                            border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -978,7 +970,6 @@ class _HomeScreenState extends State<HomeScreen> {
     bool isGuest = SecurityManager.isGuest;
     bool isMasterUser = SecurityManager.isAdmin;
 
-    // الصلاحيات الدقيقة المطلوبة للأقسام بالكامل:
     final List allMenuItems = [
       {'title': 'بيانات العملاء', 'icon': Icons.people, 'color': Colors.blue.shade700, 'screen': const ClientsScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
       {'title': 'بيانات السماسرة', 'icon': Icons.badge, 'color': Colors.teal.shade700, 'screen': const BrokersScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
@@ -986,13 +977,9 @@ class _HomeScreenState extends State<HomeScreen> {
       {'title': 'المعروض للبيع', 'icon': Icons.sell, 'color': Colors.green.shade700, 'screen': const ForSaleScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
       {'title': 'المعروض للإيجار', 'icon': Icons.house, 'color': Colors.red.shade700, 'screen': const ForRentScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
       {'title': 'المعاينات', 'icon': Icons.remove_red_eye, 'color': Colors.purple.shade700, 'screen': const InspectionsScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير', 'مدخل بيانات']},
-      // نائب المدير مسموح له بالعمليات والأرشيف، ومدخل البيانات مقيد عنهم تماماً:
       {'title': 'العمليات المكتملة', 'icon': Icons.task_alt, 'color': Colors.indigo.shade700, 'screen': const CompletedOperationsScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير']},
-      // مقيد عن نائب المدير ومدخل البيانات:
       {'title': 'حسابات المنظومة', 'icon': Icons.account_balance_wallet, 'color': Colors.brown.shade700, 'screen': const AccountsScreen(), 'allowedRoles': ['مدير', 'مدير النظام']},
-      // مقيد عن نائب المدير ومدخل البيانات:
       {'title': 'التقرير العام', 'icon': Icons.bar_chart, 'color': Colors.blueGrey.shade700, 'screen': const GeneralReportScreen(), 'allowedRoles': ['مدير', 'مدير النظام']},
-      // نائب المدير مسموح له بالأرشيف، ومدخل البيانات مقيد تماماً عنه لحماية البيانات:
       {'title': 'الأرشيف', 'icon': Icons.archive, 'color': Colors.blueGrey.shade900, 'screen': const ArchiveScreen(), 'allowedRoles': ['مدير', 'مدير النظام', 'نائب مدير']},
     ];
 
@@ -1002,7 +989,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return allowed.contains(currentRole);
     }).toList();
 
-    int unreadNotifCount = TrashBinManager.unreadCount;
+    int unreadNotifCount = NotificationService.unreadCount;
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -1046,40 +1033,33 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            StreamBuilder<int>(
-              stream: TrashBinManager.onNotificationsChanged,
-              initialData: unreadNotifCount,
-              builder: (context, snapshot) {
-                int count = snapshot.data ?? unreadNotifCount;
-                return Stack(
-                  alignment: Alignment.topRight,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.notifications, color: Colors.amberAccent, size: 24),
-                      tooltip: 'الإشعارات والتنبيهات',
-                      onPressed: () => NotificationService.showNotificationMenu(context),
-                    ),
-                    if (count > 0)
-                      Positioned(
-                        right: 6,
-                        top: 6,
-                        child: Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
-                          child: Text(
-                            '$count',
-                            style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
+            Stack(
+              alignment: Alignment.topRight,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.notifications, color: Colors.amberAccent, size: 24),
+                  tooltip: 'الإشعارات والتنبيهات',
+                  onPressed: () => NotificationService.showNotificationMenu(context),
+                ),
+                if (unreadNotifCount > 0)
+                  Positioned(
+                    right: 6,
+                    top: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(6),
                       ),
-                  ],
-                );
-              },
+                      constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                      child: Text(
+                        '$unreadNotifCount',
+                        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
             ),
             if (!isGuest && isMasterUser)
               IconButton(
@@ -1119,6 +1099,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700),
                           onPressed: () {
+                            SecurityManager.clearUserData();
                             Navigator.pop(context);
                             Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginScreen()));
                           },
@@ -1367,162 +1348,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// 🚀 الاستدعاء الصارم المباشر لخدمة طلب الدعم الفني
   void _showRemoteSupportDialog(BuildContext context) {
-    bool isProgrammerAdmin = SecurityManager.isAdmin;
-
-    final TextEditingController targetCompanyKeyController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          backgroundColor: const Color(0xFF222222),
-          title: Row(
-            children: [
-              Icon(
-                isProgrammerAdmin ? Icons.admin_panel_settings : Icons.support_agent, 
-                color: isProgrammerAdmin ? Colors.greenAccent : Colors.cyanAccent, 
-                size: 26
-              ),
-              const SizedBox(width: 8),
-              Text(
-                isProgrammerAdmin ? 'لوحة تحكم الدعم الفني عن بُعد' : 'الاتصال بالمبرمج والدعم الفني', 
-                style: TextStyle(color: isProgrammerAdmin ? Colors.greenAccent : Colors.cyanAccent, fontSize: 16)
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isProgrammerAdmin 
-                    ? 'يمكنك هنا فحص أو تعديل بيانات أي عميل أو شركة مسجلة سحابياً على السيرفر لتصحيح المشاكل وهو قاعد مكانه:'
-                    : 'يمكنك التواصل المباشر مع الدعم الفني (كابتن عبده) لطلب المساعدة أو حل أي مشكلة تواجهك في المنظومة:',
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-              const SizedBox(height: 12),
-              if (isProgrammerAdmin) ...[
-                TextField(
-                  controller: targetCompanyKeyController,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                  decoration: InputDecoration(
-                    labelText: 'أدخل إيميل أو مفتاح شركة العميل',
-                    labelStyle: const TextStyle(color: Colors.amberAccent),
-                    filled: true,
-                    fillColor: const Color(0xFF141414),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-                  ),
-                ),
-              ] else ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF141414),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.4)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('البريد المباشر للدعم الفني:', style: TextStyle(color: Colors.amberAccent, fontSize: 11)),
-                      const SizedBox(height: 4),
-                      const Text('captain.support640@gmail.com', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      const Text('حالة الاتصال: متصل وجاهز لاستقبال طلبات الدعم وصيانة المنظومة.', style: TextStyle(color: Colors.greenAccent, fontSize: 11)),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إلغاء', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: isProgrammerAdmin ? Colors.teal.shade700 : Colors.blue.shade800
-              ),
-              onPressed: () {
-                if (isProgrammerAdmin) {
-                  String keyTarget = targetCompanyKeyController.text.trim();
-                  if (keyTarget.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('برجاء إدخال مفتاح أو إيميل العميل!'), backgroundColor: Colors.orange),
-                    );
-                    return;
-                  }
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('جاري الاتصال بسحابية العميل ($keyTarget) وفحص البيانات...'),
-                      backgroundColor: Colors.teal,
-                      duration: const Duration(seconds: 3),
-                    ),
-                  );
-                } else {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('تم إرسال طلب الدعم الفني لإيميل (captain.support640@gmail.com) بنجاح وسيتم الرد عليك قريباً!'),
-                      backgroundColor: Colors.green,
-                      duration: const Duration(seconds: 3),
-                    ),
-                  );
-                }
-              },
-              child: Text(
-                isProgrammerAdmin ? 'فحص وسحب البيانات' : 'إرسال طلب الدعم للدعم الفني', 
-                style: const TextStyle(color: Colors.white)
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class LocalNetworkScanner {
-  static Future<List<String>> scanLocalDevices() async {
-    List<String> foundDevices = [];
-    try {
-      for (var interface in await NetworkInterface.list()) {
-        for (var addr in interface.addresses) {
-          if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
-            String subnet = addr.address.substring(0, addr.address.lastIndexOf('.'));
-            List<Future> futures = [];
-            
-            for (int i = 1; i < 255; i++) {
-              String targetIp = '$subnet.$i';
-              if (targetIp != addr.address) {
-                futures.add(_checkDevice(targetIp, foundDevices));
-              }
-            }
-            await Future.wait(futures);
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('خطأ في مسح الشبكة المحلية: $e');
-    }
-    return foundDevices;
-  }
-
-  static Future<void> _checkDevice(String ip, List<String> foundDevices) async {
-    try {
-      final socket = await Socket.connect(ip, 8080, timeout: const Duration(milliseconds: 150));
-      foundDevices.add(ip);
-      socket.destroy();
-    } catch (_) {
-      try {
-        final altSocket = await Socket.connect(ip, 80, timeout: const Duration(milliseconds: 150));
-        foundDevices.add(ip);
-        altSocket.destroy();
-      } catch (_) {}
-    }
+    SupportService.requestRemoteSupport(context);
   }
 }

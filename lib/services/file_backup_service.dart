@@ -10,6 +10,7 @@ import '../app_data.dart';
 import 'local_storage_service.dart';
 import 'google_drive_service.dart';
 import 'cloud_sync_service.dart';
+import 'security_manager.dart';
 
 class FileBackupService {
 
@@ -79,8 +80,17 @@ class FileBackupService {
     });
   }
 
-  /// 📄 دالة إنشاء وتوليد ملف PDF حقيقي وحفظه في مجلد Documents
+  /// 📄 🔒 دالة إنشاء وتوليد ملف PDF (مقتصرة حصرياً على المدير والمبرمج لمنع تسريب الداتا)
   static Future<bool> exportPdfToDocuments(BuildContext context) async {
+    // 🛡️ فحص حظر الموظفين ومدخلي البيانات
+    if (!SecurityManager.isAdmin && !SecurityManager.isProgrammer) {
+      SecurityManager.showPermissionDeniedSnackBar(
+        context,
+        '🔒 عفواً، تصدير التقارير والبيانات مقتصر حصرياً على مدير المنظومة!',
+      );
+      return false;
+    }
+
     try {
       final pdf = pw.Document();
 
@@ -199,8 +209,17 @@ class FileBackupService {
     }
   }
 
-  /// تنفيذ النسخ الاحتياطي التلقائي للأرشيف والبيانات
+  /// 🔒 تنفيذ النسخ الاحتياطي (مقتصر حصرياً على المدير والمبرمج)
   static Future<bool> backupToFile(BuildContext context) async {
+    // 🛡️ فحص حظر النسخ المحلي للموظفين
+    if (!SecurityManager.isAdmin && !SecurityManager.isProgrammer) {
+      SecurityManager.showPermissionDeniedSnackBar(
+        context,
+        '🔒 عفواً، أخذ النسخ الاحتياطية وتصدير البيانات مقتصر حصرياً على مدير المنظومة!',
+      );
+      return false;
+    }
+
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -257,7 +276,17 @@ class FileBackupService {
     }
   }
 
+  /// 🔒 استعادة البيانات من ملف (مقتصرة على المدير والمبرمج)
   static Future<bool> restoreFromFile(BuildContext context) async {
+    // 🛡️ فحص حظر الاستعادة للموظفين
+    if (!SecurityManager.isAdmin && !SecurityManager.isProgrammer) {
+      SecurityManager.showPermissionDeniedSnackBar(
+        context,
+        '🔒 عفواً، استرجاع النسخ الاحتياطية من صلاحية مدير المنظومة فقط!',
+      );
+      return false;
+    }
+
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

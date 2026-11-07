@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import '../app_data.dart';
 import 'local_storage_service.dart';
 import 'security_manager.dart';
@@ -11,6 +12,10 @@ import 'google_drive_service.dart';
 
 class CloudSyncService {
   static const String _dbUrl = "https://aqarat-captain-default-rtdb.firebaseio.com";
+  
+  // رقم إصدار التطبيق الحالي المثبت
+  static const String currentAppVersion = "1.0.0"; 
+
   static StreamSubscription? _realtimeSubscription;
   static Timer? _restPollingTimer;
   
@@ -27,6 +32,136 @@ class CloudSyncService {
     } catch (e) {
       debugPrint('تنبيه دعم الأوفلاين: $e');
     }
+  }
+
+  /// 🚀 🔔 نظام فحص التحديثات الذكي (مع مهلة سماح قابلة للتخطي قبل القفل الإجباري)
+  static Future<void> checkForMandatoryUpdate(BuildContext context) async {
+    try {
+      String? minRequiredVersion;
+      bool forceUpdate = false;
+      String playStoreUrl = "";
+      String releaseDateStr = "";
+      int graceDays = 7; // المهلة الافتراضية (7 أيام)
+
+      if (_useRestApi) {
+        final url = Uri.parse("$_dbUrl/system_config/app_update.json");
+        final response = await http.get(url).timeout(const Duration(seconds: 4));
+        if (response.statusCode == 200 && response.body != 'null') {
+          Map data = jsonDecode(response.body);
+          minRequiredVersion = data['min_required_version']?.toString();
+          forceUpdate = data['force_update'] == true;
+          playStoreUrl = data['store_url']?.toString() ?? "";
+          releaseDateStr = data['release_date']?.toString() ?? "";
+          graceDays = int.tryParse(data['grace_days']?.toString() ?? '7') ?? 7;
+        }
+      } else {
+        DatabaseReference ref = FirebaseDatabase.instance.ref("system_config/app_update");
+        DataSnapshot snapshot = await ref.get().timeout(const Duration(seconds: 4));
+        if (snapshot.exists && snapshot.value != null) {
+          Map data = Map.from(snapshot.value as Map);
+          minRequiredVersion = data['min_required_version']?.toString();
+          forceUpdate = data['force_update'] == true;
+          playStoreUrl = data['store_url']?.toString() ?? "";
+          releaseDateStr = data['release_date']?.toString() ?? "";
+          graceDays = int.tryParse(data['grace_days']?.toString() ?? '7') ?? 7;
+        }
+      }
+
+      // إذا وجد إصدار جديد على السيرفر
+      if (minRequiredVersion != null && _isVersionLower(currentAppVersion, minRequiredVersion)) {
+        DateTime releaseDate = DateTime.tryParse(releaseDateStr) ?? DateTime.now();
+        int daysPassed = DateTime.now().difference(releaseDate).inDays;
+        
+        // حساب الأيام المتبقية في مهلة السماح
+        int remainingGraceDays = graceDays - daysPassed;
+
+        if (context.mounted) {
+          if (forceUpdate && remainingGraceDays <= 0) {
+            // انتهت مهلة السماح -> قفل إجباري
+            _showUpdateDialog(context, storeUrl: playStoreUrl, isMandatory: true, remainingDays: 0);
+          } else {
+            // ما زال في مهلة السماح -> تنبيه اختياري مع إمكانية التخطي
+            _showUpdateDialog(context, storeUrl: playStoreUrl, isMandatory: false, remainingDays: remainingGraceDays > 0 ? remainingGraceDays : 0);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('تنبيه فحص التحديثات: $e');
+    }
+  }
+
+  /// مقارنة إصدار النسخة الحالية بالإصدار المطلوبة
+  static bool _isVersionLower(String current, String required) {
+    try {
+      List<int> currParts = current.split('.').map((e) => int.parse(e)).toList();
+      List<int> reqParts = required.split('.').map((e) => int.parse(e)).toList();
+
+      for (int i = 0; i < reqParts.length; i++) {
+        int currVal = i < currParts.length ? currParts[i] : 0;
+        if (currVal < reqParts[i]) return true;
+        if (currVal > reqParts[i]) return false;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  /// شاشة التحديث (مرنة: اختيارية أثناء المهلة، وإجبارية بعد انتهائها)
+  static void _showUpdateDialog(BuildContext context, {required String storeUrl, required bool isMandatory, required int remainingDays}) {
+    showDialog(
+      context: context,
+      barrierDismissible: !isMandatory, // لا يمكن إغلاقه إذا انتهت المهلة
+      builder: (ctx) {
+        return PopScope(
+          canPop: !isMandatory,
+          child: AlertDialog(
+            backgroundColor: const Color(0xFF1E1E1E),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15),
+              side: BorderSide(color: isMandatory ? Colors.redAccent : Colors.amber, width: 2),
+            ),
+            title: Row(
+              children: [
+                Icon(isMandatory ? Icons.warning_amber_rounded : Icons.system_update, color: isMandatory ? Colors.redAccent : Colors.amber),
+                const SizedBox(width: 10),
+                Text(
+                  isMandatory ? 'تحديث إجباري مطلوب!' : 'تحديث جديد متوفر',
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            content: Text(
+              isMandatory
+                  ? 'انتهت مهلة السماح للتحديث.\nيرجى تحديث التطبيق الآن من جوجل بلاي لمتابعة الاستخدام.'
+                  : 'يتوفر إصدار جديد من منظومة العقارات.\nمتبقي لديك ($remainingDays يوم) للتحديث قبل إغلاق النسخة القديمة.',
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            actions: [
+              if (!isMandatory)
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('تخطي الآن', style: TextStyle(color: Colors.grey)),
+                ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.download, color: Colors.white),
+                label: const Text('تحديث الآن', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                onPressed: () async {
+                  if (storeUrl.isNotEmpty) {
+                    final Uri url = Uri.parse(storeUrl);
+                    if (await canLaunchUrl(url)) {
+                      await launchUrl(url, mode: LaunchMode.externalApplication);
+                    }
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   static Future<String> _getDualSyncKey() async {
@@ -130,7 +265,6 @@ class CloudSyncService {
       String currentPhone = SecurityManager.currentUsername.isNotEmpty ? SecurityManager.currentUsername : 'مدير';
       String currentRole = SecurityManager.currentUserRole;
 
-      // الفرع الثالث: الداتا المركزية وآخر نسخة معتمدة
       Map<String, dynamic> masterPayload = {
         'data': jsonData,
         'last_updated': nowIso,
@@ -139,7 +273,6 @@ class CloudSyncService {
         'company_admin_email': SecurityManager.currentCompanyAdminEmail,
       };
 
-      // الفرع الثاني: سجل التعديلات التاريخي (الأحدث فالأحدث: فلان عدل كذا بتاريخ كذا)
       Map<String, dynamic> logPayload = {
         'action': actionDescription,
         'user': currentPhone,
@@ -216,6 +349,7 @@ class CloudSyncService {
     } catch (_) {}
   }
 
+  /// 🔄 التحديث الذكي: استبدال القوائم محلياً بالكامل لضمان اختفاء العناصر الممسوحة فوراً عند الجميع
   static bool _updateLocalMemorySmart(String rawJson) {
     try {
       Map decodedData = jsonDecode(rawJson);
@@ -231,8 +365,6 @@ class CloudSyncService {
                 singleMap[k.toString()] = v?.toString() ?? '';
               });
               tempNewList.add(singleMap);
-            } else {
-              tempNewList.add(<String, String>{});
             }
           }
 

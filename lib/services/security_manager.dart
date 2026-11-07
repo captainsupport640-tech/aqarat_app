@@ -1,16 +1,39 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class SecurityManager {
   // إيميل المبرمج الماستر الرئيسي للدعم الفني
   static const String programmerSupportEmail = 'captain.support640@gmail.com';
 
-  // متغيرات الجلسة الحالية (ديناميكية بالكامل وقابلة للتغيير على الواقع)
+  // متغيرات الجلسة الحالية
   static String currentUserRole = 'مدير';
-  static String currentUsername = ''; // رقم الهاتف/اسم المستخدم
-  static String currentUserPhone = ''; // رقم الهاتف المباشر
-  static String currentUserEmail = ''; // الإيميل التلقائي ([phone]@aqarat.com)
-  static String currentCompanyAdminEmail = ''; // إيميل الجيميل الخاص بمدير الشركة الرئيسي
+  static String currentUsername = '';
+  static String currentUserPhone = '';
+  static String currentUserEmail = '';
+  static String currentCompanyAdminEmail = '';
   static List<String> currentPermissions = ['delete', 'delete_all', 'add', 'edit', 'view'];
+
+  /// 🔔 طلب كافة صلاحيات المنظومة الشاملة فور فتح التطبيق
+  static Future<void> requestInitialSystemPermissions() async {
+    try {
+      await [
+        Permission.storage,
+        Permission.notification,
+        Permission.contacts,
+        Permission.camera,
+      ].request();
+
+      if (await Permission.manageExternalStorage.isDenied) {
+        await Permission.manageExternalStorage.request();
+      }
+
+      if (await Permission.systemAlertWindow.isDenied) {
+        await Permission.systemAlertWindow.request();
+      }
+    } catch (e) {
+      debugPrint('⚠️ خطأ في طلب الأذونات: $e');
+    }
+  }
 
   /// مصفوفة الصلاحيات والأدوار المعتمدة
   static final Map<String, List<String>> rolePermissions = {
@@ -38,11 +61,9 @@ class SecurityManager {
       'view'
     ],
     'نائب مدير': [
-      'view_all',
-      'edit_all',
+      'view_allowed',
+      'edit_allowed',
       'sync_master',
-      'view_reports',
-      'delete',
       'add',
       'edit',
       'view'
@@ -51,14 +72,13 @@ class SecurityManager {
       'add_data',
       'edit_own_data',
       'sync_master',
-      'delete',
       'add',
       'edit',
       'view'
     ],
   };
 
-  /// حفظ بيانات الجلسة الواقعية عند تسجيل الدخول
+  /// حفظ بيانات الجلسة عند تسجيل الدخول
   static Future<void> saveSession({
     required String phone,
     required String email,
@@ -71,13 +91,19 @@ class SecurityManager {
     currentUserEmail = email.trim();
     currentUserRole = role.trim();
     currentPermissions = List<String>.from(permissions);
-    if (!currentPermissions.contains('delete')) {
-      currentPermissions.add('delete');
+
+    // إضافة صلاحيات الحذف فقط إذا كان مبرمجاً أو مديراً
+    if (canDelete) {
+      if (!currentPermissions.contains('delete')) currentPermissions.add('delete');
+      if (!currentPermissions.contains('delete_all')) currentPermissions.add('delete_all');
+    } else {
+      currentPermissions.removeWhere((p) => p == 'delete' || p == 'delete_all');
     }
+
     currentCompanyAdminEmail = adminGmail.trim();
   }
 
-  /// إعادة ضبط بيانات المستخدم الحالي عند تسجيل الخروج
+  /// إعادة ضبط البيانات عند تسجيل الخروج
   static void clearUserData() {
     currentUserRole = 'مدير';
     currentUsername = '';
@@ -87,7 +113,7 @@ class SecurityManager {
     currentPermissions = ['delete', 'delete_all', 'add', 'edit', 'view'];
   }
 
-  /// فحص هل المستخدم الحالي هو المبرمج الرئيسي
+  /// فحص هل المستخدم هو المبرمج الرئيسي (صلاحيات مطلقة كاملة)
   static bool get isProgrammer {
     String cleanEmail = currentUserEmail.trim().toLowerCase();
     String cleanAdminEmail = currentCompanyAdminEmail.trim().toLowerCase();
@@ -96,30 +122,33 @@ class SecurityManager {
            currentUserRole == 'مدير النظام' ||
            cleanEmail == programmerSupportEmail ||
            cleanAdminEmail == programmerSupportEmail ||
-           currentUsername == 'programmer';
+           currentUsername == 'programmer' ||
+           currentUsername == '01200626469' ||
+           currentUsername == '01004026247';
   }
 
   /// فحص هل المستخدم هو المدير الرئيسي للشركة
   static bool get isAdmin {
-    return isProgrammer || currentUserRole == 'مدير';
+    return currentUserRole == 'مدير';
   }
 
-  /// فحص هل المستخدم الحالي ضيف
+  /// فحص هل المستخدم ضيف
   static bool get isGuest => currentUserRole == 'ضيف';
 
-  /// فحص هل يملك المستخدم صلاحية الحذف؟ (مفعلة للجميع ما عدا الضيف)
+  /// ⛔ صلاحية الحذف والمسح (مقتصرة حصرياً على المدير، وللمبرمج صلاحيات مطلقة)
   static bool get canDelete {
-    if (isGuest) return false;
-    return true;
+    if (isProgrammer) return true;
+    if (isAdmin) return true;
+    return false; // نائب المدير ومدخل البيانات والضيف ممنوعون تماماً
   }
 
-  /// فحص هل يملك المستخدم صلاحية الإضافة والتعديل؟
+  /// فحص صلاحية الإضافة والتعديل
   static bool get canAddOrEdit {
     if (isGuest) return false;
     return true;
   }
 
-  /// إرجاع المعرّف الديناميكي للشركة بناءً على إيميل الجيميل للمدير الرئيسي
+  /// معرّف الشركة
   static String get tenantCompanyId {
     if (isProgrammer) {
       return 'master_programmer_server';
@@ -137,41 +166,39 @@ class SecurityManager {
         .replaceAll(']', '');
   }
 
-  /// فحص صلاحية الوصول إلى الشاشات حسب الدور
+  /// فحص صلاحية الوصول إلى الشاشات حسب الهيكلة
   static bool canAccessScreen(String screenTitle) {
-    if (isProgrammer || isAdmin) {
-      return true;
-    }
+    if (isProgrammer) return true;
+    if (currentUserRole == 'مدير') return true;
 
     if (currentUserRole == 'نائب مدير') {
       List<String> allowedForViceManager = [
-        'بيانات العملاء',
-        'العملاء',
         'طلبات العملاء',
         'الطلبات',
         'المعروض للبيع',
         'البيع',
+        'العقارات المعروضة للبيع',
         'المعروض للإيجار',
         'الإيجار',
+        'العقارات المعروضة للإيجار',
         'المعاينات',
         'المعاينة',
         'العمليات المكتملة',
         'العمليات',
-        'تقارير',
       ];
       return allowedForViceManager.contains(screenTitle);
     }
 
     if (currentUserRole == 'مدخل بيانات') {
       List<String> allowedForDataEntry = [
-        'بيانات العملاء',
-        'العملاء',
         'طلبات العملاء',
         'الطلبات',
         'المعروض للبيع',
         'البيع',
+        'العقارات المعروضة للبيع',
         'المعروض للإيجار',
         'الإيجار',
+        'العقارات المعروضة للإيجار',
         'المعاينات',
         'المعاينة',
       ];
@@ -181,14 +208,23 @@ class SecurityManager {
     return false;
   }
 
-  /// فحص الصلاحيات قبل أي عملية (إضافة/تعديل/حذف)
+  /// فحص الصلاحيات قبل الإجراءات
   static bool checkActionPermission(BuildContext context, {required String actionName}) {
+    if (isProgrammer) return true;
+
     if (isGuest) {
       showPermissionDeniedSnackBar(context, 'عفواً، حساب الضيف للتصفح فقط!');
       return false;
     }
 
     if (actionName.contains('حذف') || actionName.contains('مسح')) {
+      if (!canDelete) {
+        showPermissionDeniedSnackBar(
+          context,
+          'عفواً، صلاحية المسح والحذف مقتصرة على مدير المنظومة فقط!',
+        );
+        return false;
+      }
       return true;
     }
 

@@ -2,11 +2,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'security_manager.dart';
 
 class LicensingService {
+  // قيمة المعادلة الحسابية المعتمدة
   static const int _baseFormulaValue = 24 + 9 - 1983;
 
   static bool isMasterAdmin = false;
   static DateTime? trialStartDate;
   static bool isActivated = false;
+  static bool used2030Reset = false; // فحص استخدام كود 2030 لمرة واحدة
   static String activationType = 'فترة تجريبية (7 أيام)';
 
   /// استخراج الرقم التعريفي البصمي للجهاز الحالي (10 أرقام)
@@ -36,17 +38,18 @@ class LicensingService {
     if (isRootAdmin) {
       isMasterAdmin = true;
       isActivated = true;
-      activationType = 'مدى الحياة';
+      activationType = 'مدى الحياة (مبرمج)';
       return;
     }
 
     isMasterAdmin = false;
 
-    // قراءة التفعيل المسجل الخاص بهذا الجهاز محلياً
+    // قراءة حالة التفعيل السابقة وحالة كود 2030
     isActivated = prefs.getBool('device_is_activated') ?? false;
     activationType = prefs.getString('device_activation_type') ?? 'فترة تجريبية (7 أيام)';
+    used2030Reset = prefs.getBool('used_2030_reset') ?? false;
 
-    if (activationType == 'مدى الحياة' || activationType == 'سنة' || activationType == 'شهر') {
+    if (activationType == 'مدى الحياة' || activationType == 'سنة' || activationType == 'شهر تجريبي') {
       isActivated = true;
     } else {
       String? storedDate = prefs.getString('device_trial_start_date');
@@ -59,23 +62,23 @@ class LicensingService {
     }
   }
 
-  /// فحص صلاحية الدخول برقمي الموبايل والباسورد
+  /// فحص صلاحية الدخول برقمي الموبايل والباسورد للمبرمج
   static bool checkMasterAdmin(String username, String password) {
     String cleanUser = username.trim();
     if ((cleanUser == "01200626469" || cleanUser == "01004026247") && password.trim() == "1983") {
       isMasterAdmin = true;
       isActivated = true;
-      activationType = 'مدى الحياة';
+      activationType = 'مدى الحياة (مبرمج)';
       return true;
     }
     return false;
   }
 
-  /// تطبيق معادلة التفعيل المبنية على بصمة الجهاز:
-  /// 1. إدخال (1983): إعادة ضبط التجريبي (7 أيام)
-  /// 2. بصمة الجهاز المباشرة -> تفعيل شهري
-  /// 3. (بصمة الجهاز + المعادلة) -> تفعيل سنوي
-  /// 4. حرف A + (بصمة الجهاز + المعادلة) -> تفعيل مدى الحياة
+  /// ومعالجة أنواع التفعيل الـ 4:
+  /// 1. كود 2030: تجديد التجريبي أسبوع لمرة واحدة فقط!
+  /// 2. سيريال الجهاز المباشر: شهر تجريبي
+  /// 3. ناتج (السيريال + المعادلة): تفعيل سنوي
+  /// 4. حرف A + ناتج (السيريال + المعادلة): تفعيل مدى الحياة
   static Future<bool> processActivationCode({
     required String inputCode,
     required String deviceId,
@@ -84,31 +87,26 @@ class LicensingService {
     String hardwareKey = getDeviceHardwareId(deviceId);
     int deviceNum = int.tryParse(hardwareKey) ?? 12345678;
 
-    // 1. الناتج الرقمي للـ (بصمة + المعادلة) = التفعيل السنوي
-    int calculatedAnnual = 24 + 9 - 1983 + deviceNum;
-    String annualCode = calculatedAnnual.abs().toString();
+    // الناتج الرقمي لـ (بصمة الجهاز + المعادلة الحسابية) = التفعيل السنوي
+    int calculatedAnnual = (deviceNum + _baseFormulaValue).abs();
+    String annualCode = calculatedAnnual.toString();
 
-    // 2. النواتج المقبولة للتفعيل مدى الحياة (وجود حرف A قبل المعادلة أو البصمة)
-    String lifetimeCode = "A$annualCode";
-    String lifetimeCodeAlt = "A-$annualCode";
-    String lifetimeCodeHardware = "A$hardwareKey";
-    String lifetimeCodeHardwareAlt = "A-$hardwareKey";
-
-    // إعادة ضبط الفترة التجريبية (كود المبرمج 1983)
-    if (cleanCode == "1983" || cleanCode == "A1983") {
+    // 1️⃣ تجديد الفترة التجريبية بكود 2030 (مرة واحدة فقط على الجهاز)
+    if (cleanCode == "2030") {
+      if (used2030Reset) {
+        return false; // تم استخدامه من قبل على هذا الجهاز
+      }
       trialStartDate = DateTime.now();
       isActivated = false;
       isMasterAdmin = false;
+      used2030Reset = true;
       activationType = 'فترة تجريبية (7 أيام)';
       await _saveDevicePrefs();
       return true;
     }
 
-    // تفعيل مدى الحياة (حرف A + بصمة الجهاز والمعادلة)
-    if (cleanCode == lifetimeCode || 
-        cleanCode == lifetimeCodeAlt || 
-        cleanCode == lifetimeCodeHardware || 
-        cleanCode == lifetimeCodeHardwareAlt) {
+    // 2️⃣ تفعيل مدى الحياة (وجود حرف A مع كود المعادلة السنوية)
+    if (cleanCode == "A$annualCode" || cleanCode == "${annualCode}A" || cleanCode == "A-$annualCode") {
       isActivated = true;
       isMasterAdmin = false;
       activationType = 'مدى الحياة';
@@ -116,7 +114,7 @@ class LicensingService {
       return true;
     }
 
-    // تفعيل سنوي (ناتج بصمة الجهاز + المعادلة بدون A)
+    // 3️⃣ تفعيل سنوي (ناتج بصمة الجهاز + المعادلة)
     if (cleanCode == annualCode) {
       isActivated = true;
       isMasterAdmin = false;
@@ -125,11 +123,11 @@ class LicensingService {
       return true;
     }
 
-    // تفعيل شهري (بصمة الجهاز المباشرة)
-    if (cleanCode == hardwareKey) {
+    // 4️⃣ شهر تجريبي (إدخال سيريال الجهاز المباشر)
+    if (cleanCode == hardwareKey || cleanCode == deviceId.trim()) {
       isActivated = true;
       isMasterAdmin = false;
-      activationType = 'شهر';
+      activationType = 'شهر تجريبي';
       await _saveDevicePrefs();
       return true;
     }
@@ -137,14 +135,14 @@ class LicensingService {
     return false;
   }
 
-  /// احتساب الأيام المتبقية للتفعيل على الجهاز
+  /// احتساب الأيام المتبقية للتفعيل
   static int getRemainingDays() {
-    if (isMasterAdmin || isActivated || activationType == 'مدى الحياة') {
+    if (isMasterAdmin || activationType == 'مدى الحياة') {
       return 9999;
     }
 
     if (activationType == 'سنة') return 365;
-    if (activationType == 'شهر') return 30;
+    if (activationType == 'شهر تجريبي') return 30;
 
     DateTime today = DateTime.now();
     trialStartDate ??= today;
@@ -164,6 +162,7 @@ class LicensingService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('device_is_activated', isActivated);
     await prefs.setString('device_activation_type', activationType);
+    await prefs.setBool('used_2030_reset', used2030Reset);
     if (trialStartDate != null) {
       await prefs.setString('device_trial_start_date', trialStartDate!.toIso8601String());
     }
