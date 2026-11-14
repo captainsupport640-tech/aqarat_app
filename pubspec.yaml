@@ -1,0 +1,53 @@
+name: aqarat
+description: "منظومة الكابتن للتسويق العقاري"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  sqflite: ^2.3.0
+  path: ^1.9.0
+  file_picker: ^8.1.2
+  path_provider: ^2.1.2
+  share_plus: ^12.0.2
+  flutter_contacts: 1.1.9+2
+  cupertino_icons: ^2.0.0
+  shared_preferences: ^2.2.3
+  http: ^1.2.1
+  google_sign_in: ^6.2.1
+  googleapis: ^13.2.0
+  firebase_core: ^2.27.0
+  firebase_database: ^10.4.0
+  permission_handler: ^13.0.2
+  flutter_localizations:
+    sdk: flutter
+  local_auth: ^3.0.2
+  printing: ^5.15.1
+  pdf: ^3.13.1
+  url_launcher: ^6.3.3
+  google_fonts: ^9.0.0
+  speech_to_text: ^7.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/logo_1.png
+
+flutter_launcher_icons:
+  image_path: "assets/images/logo_2.png"
+  android: true
+  ios: false
+  windows:
+    generate: true
+    image_path: "assets/images/logo_3.png"
